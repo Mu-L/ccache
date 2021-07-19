@@ -74,7 +74,7 @@ TEST_CASE("Config: default values")
   CHECK(config.sloppiness() == 0);
   CHECK(config.stats());
   CHECK(config.temporary_dir().empty()); // Set later
-  CHECK(config.umask() == std::numeric_limits<uint32_t>::max());
+  CHECK(config.umask() == nonstd::nullopt);
 }
 
 TEST_CASE("Config::update_from_file")
@@ -128,7 +128,7 @@ TEST_CASE("Config::update_from_file")
     "run_second_cpp = false\n"
     "sloppiness =     time_macros   ,include_file_mtime"
     "  include_file_ctime,file_stat_matches,file_stat_matches_ctime,pch_defines"
-    " ,  no_system_headers,system_headers,clang_index_store\n"
+    " ,  no_system_headers,system_headers,clang_index_store,ivfsoverlay\n"
     "stats = false\n"
     "temporary_dir = ${USER}_foo\n"
     "umask = 777"); // Note: no newline.
@@ -169,10 +169,11 @@ TEST_CASE("Config::update_from_file")
         == (SLOPPY_INCLUDE_FILE_MTIME | SLOPPY_INCLUDE_FILE_CTIME
             | SLOPPY_TIME_MACROS | SLOPPY_FILE_STAT_MATCHES
             | SLOPPY_FILE_STAT_MATCHES_CTIME | SLOPPY_SYSTEM_HEADERS
-            | SLOPPY_PCH_DEFINES | SLOPPY_CLANG_INDEX_STORE));
+            | SLOPPY_PCH_DEFINES | SLOPPY_CLANG_INDEX_STORE
+            | SLOPPY_IVFSOVERLAY));
   CHECK_FALSE(config.stats());
   CHECK(config.temporary_dir() == FMT("{}_foo", user));
-  CHECK(config.umask() == 0777);
+  CHECK(config.umask() == 0777u);
 }
 
 TEST_CASE("Config::update_from_file, error handling")
@@ -218,7 +219,7 @@ TEST_CASE("Config::update_from_file, error handling")
   {
     Util::write_file("ccache.conf", "umask = ");
     CHECK(config.update_from_file("ccache.conf"));
-    CHECK(config.umask() == std::numeric_limits<uint32_t>::max());
+    CHECK(config.umask() == nonstd::nullopt);
   }
 
   SUBCASE("invalid size")
@@ -400,10 +401,12 @@ TEST_CASE("Config::visit_items")
     "read_only_direct = true\n"
     "recache = true\n"
     "run_second_cpp = false\n"
+    "secondary_storage = ss\n"
     "sloppiness = include_file_mtime, include_file_ctime, time_macros,"
     " file_stat_matches, file_stat_matches_ctime, pch_defines, system_headers,"
-    " clang_index_store\n"
+    " clang_index_store, ivfsoverlay\n"
     "stats = false\n"
+    "stats_log = sl\n"
     "temporary_dir = td\n"
     "umask = 022\n");
 
@@ -412,11 +415,10 @@ TEST_CASE("Config::visit_items")
 
   std::vector<std::string> received_items;
 
-  config.visit_items([&](const std::string& key,
-                         const std::string& value,
-                         const std::string& origin) {
-    received_items.push_back(FMT("({}) {} = {}", origin, key, value));
-  });
+  config.visit_items(
+    [&](const auto& key, const auto& value, const auto& origin) {
+      received_items.push_back(FMT("({}) {} = {}", origin, key, value));
+    });
 
   std::vector<std::string> expected = {
     "(test.conf) absolute_paths_in_stderr = true",
@@ -457,10 +459,12 @@ TEST_CASE("Config::visit_items")
     "(test.conf) read_only_direct = true",
     "(test.conf) recache = true",
     "(test.conf) run_second_cpp = false",
+    "(test.conf) secondary_storage = ss",
     "(test.conf) sloppiness = include_file_mtime, include_file_ctime,"
     " time_macros, pch_defines, file_stat_matches, file_stat_matches_ctime,"
-    " system_headers, clang_index_store",
+    " system_headers, clang_index_store, ivfsoverlay",
     "(test.conf) stats = false",
+    "(test.conf) stats_log = sl",
     "(test.conf) temporary_dir = td",
     "(test.conf) umask = 022",
   };

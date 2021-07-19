@@ -1,4 +1,4 @@
-add_library(third_party_lib STATIC base32hex.c format.cpp xxhash.c)
+add_library(third_party_lib STATIC base32hex.c format.cpp url.cpp xxhash.c)
 if(NOT MSVC)
   target_sources(third_party_lib PRIVATE getopt_long.c)
 else()
@@ -45,33 +45,11 @@ target_include_directories(
 target_link_libraries(third_party_lib PRIVATE standard_settings)
 target_link_libraries(third_party_lib INTERFACE blake3)
 
-# These warnings are enabled by default even without e.g. -Wall, but we don't
-# want them in third_party.
-if(CMAKE_CXX_COMPILER_ID MATCHES "^GNU|Clang$")
-  target_compile_options(
-    third_party_lib
-    PRIVATE
-      $<$<COMPILE_LANGUAGE:C>:-Wno-implicit-function-declaration
-      -Wno-int-conversion>)
-endif()
-
-if(CMAKE_C_COMPILER_ID STREQUAL "GNU")
-  target_compile_options(
-    third_party_lib
-    PRIVATE $<$<COMPILE_LANGUAGE:C>:-Wno-attributes>)
-endif()
-
 # Silence warning from winbase.h due to /Zc:preprocessor.
 if(MSVC)
   target_compile_options(
     third_party_lib
     PRIVATE /wd5105)
-endif()
-
-# The headers are included from the rest of the project, so turn off warnings as
-# required.
-if(CMAKE_CXX_COMPILER_ID STREQUAL "GNU")
-  target_compile_options(third_party_lib INTERFACE -Wno-shadow)
 endif()
 
 add_subdirectory(blake3)

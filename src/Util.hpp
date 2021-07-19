@@ -1,4 +1,4 @@
-// Copyright (C) 2019-2020 Joel Rosdahl and other contributors
+// Copyright (C) 2019-2021 Joel Rosdahl and other contributors
 //
 // See doc/AUTHORS.adoc for a complete list of contributors.
 //
@@ -18,14 +18,15 @@
 
 #pragma once
 
-#include "system.hpp"
-
 #include "CacheFile.hpp"
+
+#include <util/Tokenizer.hpp>
 
 #include "third_party/nonstd/optional.hpp"
 #include "third_party/nonstd/string_view.hpp"
 
 #include <algorithm>
+#include <cstdint>
 #include <functional>
 #include <ios>
 #include <memory>
@@ -128,13 +129,6 @@ bool create_dir(nonstd::string_view dir);
 // Get directory name of path.
 nonstd::string_view dir_name(nonstd::string_view path);
 
-// Return true if `suffix` is a suffix of `string`.
-inline bool
-ends_with(nonstd::string_view string, nonstd::string_view suffix)
-{
-  return string.ends_with(suffix);
-}
-
 // Like create_dir but throws Fatal on error.
 void ensure_dir_exists(nonstd::string_view dir);
 
@@ -226,13 +220,6 @@ const char* get_hostname();
 std::string get_relative_path(nonstd::string_view dir,
                               nonstd::string_view path);
 
-// Join `cache_dir`, a '/' and `name` into a single path and return it.
-// Additionally, `level` single-character, '/'-separated subpaths are split from
-// the beginning of `name` before joining them all.
-std::string get_path_in_cache(nonstd::string_view cache_dir,
-                              uint8_t level,
-                              nonstd::string_view name);
-
 // Hard-link `oldpath` to `newpath`. Throws `Error` on error.
 void hard_link(const std::string& oldpath, const std::string& newpath);
 
@@ -265,9 +252,6 @@ int_to_big_endian(int8_t value, uint8_t* buffer)
   buffer[0] = value;
 }
 
-// Return whether `path` is absolute.
-bool is_absolute_path(nonstd::string_view path);
-
 // Test if a file is on nfs.
 //
 // Sets is_nfs to the result if fstatfs is available and no error occurred.
@@ -286,18 +270,6 @@ is_dir_separator(char ch)
          || ch == '\\'
 #endif
     ;
-}
-
-// Return whether `path` is a full path.
-inline bool
-is_full_path(nonstd::string_view path)
-{
-#ifdef _WIN32
-  if (path.find('\\') != nonstd::string_view::npos) {
-    return true;
-  }
-#endif
-  return path.find('/') != nonstd::string_view::npos;
 }
 
 // Return whether `path` represents a precompiled header (see "Precompiled
@@ -336,32 +308,10 @@ std::string normalize_absolute_path(nonstd::string_view path);
 // into seconds. Throws `Error` on error.
 uint64_t parse_duration(const std::string& duration);
 
-// Parse a string into a signed integer.
-//
-// Throws `Error` if `value` cannot be parsed as an int64_t or if the value
-// falls out of the range [`min_value`, `max_value`]. `min_value` and
-// `max_value` default to min and max values of int64_t. `description` is
-// included in the error message for range violations.
-int64_t parse_signed(const std::string& value,
-                     nonstd::optional<int64_t> min_value = nonstd::nullopt,
-                     nonstd::optional<int64_t> max_value = nonstd::nullopt,
-                     nonstd::string_view description = "integer");
-
 // Parse a "size value", i.e. a string that can end in k, M, G, T (10-based
 // suffixes) or Ki, Mi, Gi, Ti (2-based suffixes). For backward compatibility, K
 // is also recognized as a synonym of k. Throws `Error` on parse error.
 uint64_t parse_size(const std::string& value);
-
-// Parse a string into an unsigned integer.
-//
-// Throws `Error` if `value` cannot be parsed as an uint64_t or if the value
-// falls out of the range [`min_value`, `max_value`]. `min_value` and
-// `max_value` default to min and max values of uint64_t. `description` is
-// included in the error message for range violations.
-uint64_t parse_unsigned(const std::string& value,
-                        nonstd::optional<uint64_t> min_value = nonstd::nullopt,
-                        nonstd::optional<uint64_t> max_value = nonstd::nullopt,
-                        nonstd::string_view description = "integer");
 
 // Read data from `fd` until end of file and call `data_receiver` with the read
 // data. Returns whether reading was successful, i.e. whether the read(2) call
@@ -420,37 +370,22 @@ size_change_kibibyte(const Stat& old_stat, const Stat& new_stat)
          / 1024;
 }
 
-// Split `input` into words at any of the characters listed in `separators`.
-// These words are a view into `input`; empty words are omitted. `separators`
-// must neither be the empty string nor a nullptr.
-std::vector<nonstd::string_view> split_into_views(nonstd::string_view input,
-                                                  const char* separators);
+// Split `string` into tokens at any of the characters in `separators`. These
+// tokens are views into `string`. `separators` must neither be the empty string
+// nor a nullptr.
+std::vector<nonstd::string_view> split_into_views(
+  nonstd::string_view string,
+  const char* separators,
+  util::Tokenizer::Mode mode = util::Tokenizer::Mode::skip_empty);
 
-// Same as `split_into_views` but the words are copied from `input`.
-std::vector<std::string> split_into_strings(nonstd::string_view input,
-                                            const char* separators);
-
-// Return true if `prefix` is a prefix of `string`.
-inline bool
-starts_with(const char* string, nonstd::string_view prefix)
-{
-  // Optimized version of starts_with(string_view, string_view): avoid computing
-  // the length of the string argument.
-  return strncmp(string, prefix.data(), prefix.length()) == 0;
-}
-
-// Return true if `prefix` is a prefix of `string`.
-inline bool
-starts_with(nonstd::string_view string, nonstd::string_view prefix)
-{
-  return string.starts_with(prefix);
-}
+// Same as `split_into_views` but the tokens are copied from `string`.
+std::vector<std::string> split_into_strings(
+  nonstd::string_view string,
+  const char* separators,
+  util::Tokenizer::Mode mode = util::Tokenizer::Mode::skip_empty);
 
 // Returns a copy of string with the specified ANSI CSI sequences removed.
 [[nodiscard]] std::string strip_ansi_csi_seqs(nonstd::string_view string);
-
-// Strip whitespace from left and right side of a string.
-[[nodiscard]] std::string strip_whitespace(nonstd::string_view string);
 
 // Convert a string to lowercase.
 [[nodiscard]] std::string to_lowercase(nonstd::string_view string);
@@ -463,8 +398,8 @@ void traverse(const std::string& path, const TraverseVisitor& visitor);
 
 // Remove `path` (non-directory), NFS safe. Logs according to `unlink_log`.
 //
-// Returns whether removal was successful. A nonexistent `path` is considered
-// successful.
+// Returns whether removal was successful. A nonexistent `path` is considered a
+// failure.
 bool unlink_safe(const std::string& path,
                  UnlinkLog unlink_log = UnlinkLog::log_failure);
 

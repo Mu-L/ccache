@@ -24,13 +24,29 @@
 #include "FormatNonstdStringView.hpp"
 #include "Logging.hpp"
 #include "TemporaryFile.hpp"
+#include "Win32Util.hpp"
 #include "fmtmacros.hpp"
+
+#include <core/wincompat.hpp>
+#include <util/path.hpp>
+#include <util/string.hpp>
 
 extern "C" {
 #include "third_party/base32hex.h"
 }
 
+#ifdef HAVE_DIRENT_H
+#  include <dirent.h>
+#endif
+
+#ifdef HAVE_UNISTD_H
+#  include <unistd.h>
+#endif
+
+#include <fcntl.h>
+
 #include <algorithm>
+#include <climits>
 #include <fstream>
 
 #ifndef HAVE_DIRENT_H
@@ -45,16 +61,18 @@ extern "C" {
 #  include <sys/time.h>
 #endif
 
+#ifdef HAVE_UTIME_H
+#  include <utime.h>
+#elif defined(HAVE_SYS_UTIME_H)
+#  include <sys/utime.h>
+#endif
+
 #ifdef HAVE_LINUX_FS_H
 #  include <linux/magic.h>
 #  include <sys/statfs.h>
 #elif defined(HAVE_STRUCT_STATFS_F_FSTYPENAME)
 #  include <sys/mount.h>
 #  include <sys/param.h>
-#endif
-
-#ifdef _WIN32
-#  include "Win32Util.hpp"
 #endif
 
 #ifdef __linux__
@@ -136,26 +154,14 @@ path_max(const std::string& path)
 
 template<typename T>
 std::vector<T>
-split_at(string_view input, const char* separators)
+split_into(string_view string,
+           const char* separators,
+           util::Tokenizer::Mode mode)
 {
-  ASSERT(separators != nullptr && separators[0] != '\0');
-
   std::vector<T> result;
-
-  size_t start = 0;
-  while (start < input.size()) {
-    size_t end = input.find_first_of(separators, start);
-
-    if (end == string_view::npos) {
-      result.emplace_back(input.data() + start, input.size() - start);
-      break;
-    } else if (start != end) {
-      result.emplace_back(input.data() + start, end - start);
-    }
-
-    start = end + 1;
+  for (const auto token : util::Tokenizer(string, separators, mode)) {
+    result.emplace_back(token);
   }
-
   return result;
 }
 
@@ -165,14 +171,15 @@ rewrite_stderr_to_absolute_paths(string_view text)
   static const std::string in_file_included_from = "In file included from ";
 
   std::string result;
-  for (auto line : Util::split_into_views(text, "\n")) {
+  for (auto line :
+       util::Tokenizer(text, "\n", util::Tokenizer::Mode::skip_last_empty)) {
     // Rewrite <path> to <absolute path> in the following two cases, where X may
     // be optional ANSI CSI sequences:
     //
     // In file included from X<path>X:1:
     // X<path>X:1:2: ...
 
-    if (Util::starts_with(line, in_file_included_from)) {
+    if (util::starts_with(line, in_file_included_from)) {
       result += in_file_included_from;
       line = line.substr(in_file_included_from.length());
     }
@@ -617,7 +624,7 @@ get_apparent_cwd(const std::string& actual_cwd)
   return actual_cwd;
 #else
   auto pwd = getenv("PWD");
-  if (!pwd) {
+  if (!pwd || !util::is_absolute_path(pwd)) {
     return actual_cwd;
   }
 
@@ -728,8 +735,8 @@ get_hostname()
 std::string
 get_relative_path(string_view dir, string_view path)
 {
-  ASSERT(Util::is_absolute_path(dir));
-  ASSERT(Util::is_absolute_path(path));
+  ASSERT(util::is_absolute_path(dir));
+  ASSERT(util::is_absolute_path(path));
 
 #ifdef _WIN32
   // Paths can be escaped by a slash for use with e.g. -isystem.
@@ -769,27 +776,6 @@ get_relative_path(string_view dir, string_view path)
   return result.empty() ? "." : result;
 }
 
-std::string
-get_path_in_cache(string_view cache_dir, uint8_t level, string_view name)
-{
-  ASSERT(level >= 1 && level <= 8);
-  ASSERT(name.length() >= level);
-
-  std::string path(cache_dir);
-  path.reserve(path.size() + level * 2 + 1 + name.length() - level);
-
-  for (uint8_t i = 0; i < level; ++i) {
-    path.push_back('/');
-    path.push_back(name.at(i));
-  }
-
-  path.push_back('/');
-  string_view name_remaining = name.substr(level);
-  path.append(name_remaining.data(), name_remaining.length());
-
-  return path;
-}
-
 void
 hard_link(const std::string& oldpath, const std::string& newpath)
 {
@@ -812,18 +798,6 @@ hard_link(const std::string& oldpath, const std::string& newpath)
                 Win32Util::error_message(error));
   }
 #endif
-}
-
-bool
-is_absolute_path(string_view path)
-{
-#ifdef _WIN32
-  if (path.length() >= 2 && path[1] == ':'
-      && (path[2] == '/' || path[2] == '\\')) {
-    return true;
-  }
-#endif
-  return !path.empty() && path[0] == '/';
 }
 
 #if defined(HAVE_LINUX_FS_H) || defined(HAVE_STRUCT_STATFS_F_FSTYPENAME)
@@ -875,7 +849,7 @@ make_relative_path(const std::string& base_dir,
                    const std::string& apparent_cwd,
                    nonstd::string_view path)
 {
-  if (base_dir.empty() || !Util::starts_with(path, base_dir)) {
+  if (base_dir.empty() || !util::starts_with(path, base_dir)) {
     return std::string(path);
   }
 
@@ -907,7 +881,7 @@ make_relative_path(const std::string& base_dir,
   const auto path_suffix = std::string(original_path.substr(path.length()));
   const auto real_path = Util::real_path(std::string(path));
 
-  const auto add_relpath_candidates = [&](nonstd::string_view path) {
+  const auto add_relpath_candidates = [&](auto path) {
     const std::string normalized_path = Util::normalize_absolute_path(path);
     relpath_candidates.push_back(
       Util::get_relative_path(actual_cwd, normalized_path));
@@ -924,7 +898,7 @@ make_relative_path(const std::string& base_dir,
   // Find best (i.e. shortest existing) match:
   std::sort(relpath_candidates.begin(),
             relpath_candidates.end(),
-            [](const std::string& path1, const std::string& path2) {
+            [](const auto& path1, const auto& path2) {
               return path1.length() < path2.length();
             });
   for (const auto& relpath : relpath_candidates) {
@@ -958,7 +932,7 @@ matches_dir_prefix_or_file(string_view dir_prefix_or_file, string_view path)
 std::string
 normalize_absolute_path(string_view path)
 {
-  if (!is_absolute_path(path)) {
+  if (!util::is_absolute_path(path)) {
     return std::string(path);
   }
 
@@ -1032,36 +1006,13 @@ parse_duration(const std::string& duration)
                 duration);
   }
 
-  return factor * parse_unsigned(duration.substr(0, duration.length() - 1));
-}
-
-int64_t
-parse_signed(const std::string& value,
-             optional<int64_t> min_value,
-             optional<int64_t> max_value,
-             string_view description)
-{
-  std::string stripped_value = strip_whitespace(value);
-
-  size_t end = 0;
-  long long result = 0;
-  bool failed = false;
-  try {
-    // Note: sizeof(long long) is guaranteed to be >= sizeof(int64_t)
-    result = std::stoll(stripped_value, &end, 10);
-  } catch (std::exception&) {
-    failed = true;
+  const auto value =
+    util::parse_unsigned(duration.substr(0, duration.length() - 1));
+  if (value) {
+    return factor * *value;
+  } else {
+    throw Error(value.error());
   }
-  if (failed || end != stripped_value.size()) {
-    throw Error("invalid integer: \"{}\"", stripped_value);
-  }
-
-  int64_t min = min_value ? *min_value : INT64_MIN;
-  int64_t max = max_value ? *max_value : INT64_MAX;
-  if (result < min || result > max) {
-    throw Error("{} must be between {} and {}", description, min, max);
-  }
-  return result;
 }
 
 uint64_t
@@ -1105,45 +1056,11 @@ parse_size(const std::string& value)
   return static_cast<uint64_t>(result);
 }
 
-uint64_t
-parse_unsigned(const std::string& value,
-               optional<uint64_t> min_value,
-               optional<uint64_t> max_value,
-               string_view description)
-{
-  std::string stripped_value = strip_whitespace(value);
-
-  size_t end = 0;
-  unsigned long long result = 0;
-  bool failed = false;
-  if (Util::starts_with(stripped_value, "-")) {
-    failed = true;
-  } else {
-    try {
-      // Note: sizeof(unsigned long long) is guaranteed to be >=
-      // sizeof(uint64_t)
-      result = std::stoull(stripped_value, &end, 10);
-    } catch (std::exception&) {
-      failed = true;
-    }
-  }
-  if (failed || end != stripped_value.size()) {
-    throw Error("invalid unsigned integer: \"{}\"", stripped_value);
-  }
-
-  uint64_t min = min_value ? *min_value : 0;
-  uint64_t max = max_value ? *max_value : UINT64_MAX;
-  if (result < min || result > max) {
-    throw Error("{} must be between {} and {}", description, min, max);
-  }
-  return result;
-}
-
 bool
 read_fd(int fd, DataReceiver data_receiver)
 {
   ssize_t n;
-  char buffer[READ_BUFFER_SIZE];
+  char buffer[CCACHE_READ_BUFFER_SIZE];
   while ((n = read(fd, buffer, sizeof(buffer))) != 0) {
     if (n == -1 && errno != EINTR) {
       break;
@@ -1355,15 +1272,19 @@ setenv(const std::string& name, const std::string& value)
 }
 
 std::vector<string_view>
-split_into_views(string_view input, const char* separators)
+split_into_views(string_view string,
+                 const char* separators,
+                 util::Tokenizer::Mode mode)
 {
-  return split_at<string_view>(input, separators);
+  return split_into<string_view>(string, separators, mode);
 }
 
 std::vector<std::string>
-split_into_strings(string_view input, const char* separators)
+split_into_strings(string_view string,
+                   const char* separators,
+                   util::Tokenizer::Mode mode)
 {
-  return split_at<std::string>(input, separators);
+  return split_into<std::string>(string, separators, mode);
 }
 
 std::string
@@ -1386,15 +1307,6 @@ strip_ansi_csi_seqs(string_view string)
   }
 
   return result;
-}
-
-std::string
-strip_whitespace(string_view string)
-{
-  auto is_space = [](int ch) { return std::isspace(ch); };
-  auto start = std::find_if_not(string.begin(), string.end(), is_space);
-  auto end = std::find_if_not(string.rbegin(), string.rend(), is_space).base();
-  return start < end ? std::string(start, end) : std::string();
 }
 
 std::string

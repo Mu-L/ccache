@@ -1,5 +1,5 @@
 // Copyright (C) 2002-2006 Andrew Tridgell
-// Copyright (C) 2009-2020 Joel Rosdahl and other contributors
+// Copyright (C) 2009-2021 Joel Rosdahl and other contributors
 //
 // See doc/AUTHORS.adoc for a complete list of contributors.
 //
@@ -25,6 +25,8 @@
 #include "Logging.hpp"
 #include "Statistics.hpp"
 #include "Util.hpp"
+
+#include <util/string.hpp>
 
 #ifdef INODE_CACHE_SUPPORTED
 #  include "InodeCache.hpp"
@@ -58,7 +60,7 @@ update_counters(const std::string& dir,
                 bool cleanup_performed)
 {
   const std::string stats_file = dir + "/stats";
-  Statistics::update(stats_file, [=](Counters& cs) {
+  Statistics::update(stats_file, [=](auto& cs) {
     if (cleanup_performed) {
       cs.increment(Statistic::cleanups_performed);
     }
@@ -74,8 +76,7 @@ clean_old(const Context& ctx,
 {
   Util::for_each_level_1_subdir(
     ctx.config.cache_dir(),
-    [&](const std::string& subdir,
-        const Util::ProgressReceiver& sub_progress_receiver) {
+    [&](const auto& subdir, const auto& sub_progress_receiver) {
       clean_up_dir(subdir, 0, 0, max_age, sub_progress_receiver);
     },
     progress_receiver);
@@ -119,10 +120,9 @@ clean_up_dir(const std::string& subdir,
   }
 
   // Sort according to modification time, oldest first.
-  std::sort(
-    files.begin(), files.end(), [](const CacheFile& f1, const CacheFile& f2) {
-      return f1.lstat().mtime() < f2.lstat().mtime();
-    });
+  std::sort(files.begin(), files.end(), [](const auto& f1, const auto& f2) {
+    return f1.lstat().mtime() < f2.lstat().mtime();
+  });
 
   LOG("Before cleanup: {:.0f} KiB, {:.0f} files",
       static_cast<double>(cache_size) / 1024,
@@ -145,7 +145,7 @@ clean_up_dir(const std::string& subdir,
       break;
     }
 
-    if (Util::ends_with(file.path(), ".stderr")) {
+    if (util::ends_with(file.path(), ".stderr")) {
       // In order to be nice to legacy ccache versions, make sure that the .o
       // file is deleted before .stderr, because if the ccache process gets
       // killed after deleting the .stderr but before deleting the .o, the
@@ -186,8 +186,7 @@ clean_up_all(const Config& config,
 {
   Util::for_each_level_1_subdir(
     config.cache_dir(),
-    [&](const std::string& subdir,
-        const Util::ProgressReceiver& sub_progress_receiver) {
+    [&](const auto& subdir, const auto& sub_progress_receiver) {
       clean_up_dir(subdir,
                    config.max_size() / 16,
                    config.max_files() / 16,

@@ -1,6 +1,8 @@
 FROM centos:8
 
+# also run update due to https://bugs.centos.org/view.php?id=18212
 RUN dnf install -y epel-release \
+ && dnf update -y \
  && dnf install -y \
         asciidoc \
         autoconf \
@@ -12,6 +14,9 @@ RUN dnf install -y epel-release \
         elfutils \
         gcc \
         gcc-c++ \
+        hiredis-devel \
         libzstd-devel \
         make \
+        python3 \
+        redis \
  && dnf clean all

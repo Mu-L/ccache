@@ -1,4 +1,4 @@
-// Copyright (C) 2020 Joel Rosdahl and other contributors
+// Copyright (C) 2020-2021 Joel Rosdahl and other contributors
 //
 // See doc/AUTHORS.adoc for a complete list of contributors.
 //
@@ -18,9 +18,10 @@
 
 #pragma once
 
-#include "system.hpp"
-
 #include "third_party/nonstd/optional.hpp"
+
+#include <sys/stat.h>
+#include <sys/types.h>
 
 // This class sets a new (process-global) umask and restores the previous umask
 // when destructed.
@@ -34,7 +35,7 @@ private:
   nonstd::optional<mode_t> m_saved_umask;
 };
 
-UmaskScope::UmaskScope(nonstd::optional<mode_t> new_umask)
+inline UmaskScope::UmaskScope(nonstd::optional<mode_t> new_umask)
 {
 #ifndef _WIN32
   if (new_umask) {
@@ -45,7 +46,7 @@ UmaskScope::UmaskScope(nonstd::optional<mode_t> new_umask)
 #endif
 }
 
-UmaskScope::~UmaskScope()
+inline UmaskScope::~UmaskScope()
 {
 #ifndef _WIN32
   if (m_saved_umask) {

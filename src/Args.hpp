@@ -1,4 +1,4 @@
-// Copyright (C) 2020 Joel Rosdahl and other contributors
+// Copyright (C) 2020-2021 Joel Rosdahl and other contributors
 //
 // See doc/AUTHORS.adoc for a complete list of contributors.
 //
@@ -17,8 +17,6 @@
 // Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
 
 #pragma once
-
-#include "system.hpp"
 
 #include "NonCopyable.hpp"
 #include "Util.hpp"
@@ -115,18 +113,14 @@ Args::size() const
   return m_args.size();
 }
 
-// clang-format off
 inline const std::string&
 Args::operator[](size_t i) const
-// clang-format on
 {
   return m_args[i];
 }
 
-// clang-format off
 inline std::string&
 Args::operator[](size_t i)
-// clang-format on
 {
   return m_args[i];
 }

@@ -12,11 +12,11 @@ set(
   Counters.cpp
   Decompressor.cpp
   Depfile.cpp
+  Fd.cpp
   Hash.cpp
   Lockfile.cpp
   Logging.cpp
   Manifest.cpp
-  MiniTrace.cpp
   NullCompressor.cpp
   NullDecompressor.cpp
   ProgressBar.cpp
@@ -41,10 +41,15 @@ set(
   execute.cpp
   hashutil.cpp
   language.cpp
-  version.cpp)
+  version.cpp
+)
 
 if(INODE_CACHE_SUPPORTED)
   list(APPEND source_files InodeCache.cpp)
+endif()
+
+if(MTR_ENABLED)
+  list(APPEND source_files MiniTrace.cpp)
 endif()
 
 if(WIN32)
@@ -79,4 +84,15 @@ target_link_libraries(
 
 target_include_directories(ccache_lib PRIVATE ${CMAKE_BINARY_DIR} ${CMAKE_CURRENT_SOURCE_DIR})
 
+if(REDIS_STORAGE_BACKEND)
+  target_compile_definitions(ccache_lib PRIVATE -DHAVE_REDIS_STORAGE_BACKEND)
+  target_link_libraries(
+    ccache_lib
+    PUBLIC standard_settings standard_warnings HIREDIS::HIREDIS
+           third_party_lib)
+endif()
+
+add_subdirectory(core)
+add_subdirectory(storage)
 add_subdirectory(third_party)
+add_subdirectory(util)

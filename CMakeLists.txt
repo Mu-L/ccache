@@ -1,4 +1,4 @@
-cmake_minimum_required(VERSION 3.4.3)
+cmake_minimum_required(VERSION 3.10)
 
 project(ccache LANGUAGES C CXX)
 if(MSVC)
@@ -8,8 +8,10 @@ else()
 endif()
 set(CMAKE_PROJECT_DESCRIPTION "a fast C/C++ compiler cache")
 
-if(NOT "${CMAKE_CXX_STANDARD}")
-  set(CMAKE_CXX_STANDARD 11)
+if(MSVC)
+  set(CMAKE_CXX_STANDARD 17) # Need support for std::filesystem
+else()
+  set(CMAKE_CXX_STANDARD 14)
 endif()
 set(CMAKE_CXX_STANDARD_REQUIRED YES)
 set(CMAKE_CXX_EXTENSIONS NO)
@@ -28,10 +30,8 @@ list(APPEND CMAKE_MODULE_PATH "${CMAKE_CURRENT_SOURCE_DIR}/cmake")
 # C++ error messages)
 #
 
-# Clang 3.4 and AppleClang 6.0 fail to compile doctest.
-# GCC 4.8.4 is known to work OK but give warnings.
-if((CMAKE_CXX_COMPILER_ID STREQUAL "Clang" AND CMAKE_CXX_COMPILER_VERSION VERSION_LESS 3.5)
-   OR (CMAKE_CXX_COMPILER_ID STREQUAL "GNU" AND CMAKE_CXX_COMPILER_VERSION VERSION_LESS 4.8.4)
+if((CMAKE_CXX_COMPILER_ID STREQUAL "Clang" AND CMAKE_CXX_COMPILER_VERSION VERSION_LESS 3.8)
+   OR (CMAKE_CXX_COMPILER_ID STREQUAL "GNU" AND CMAKE_CXX_COMPILER_VERSION VERSION_LESS 5)
    OR (CMAKE_CXX_COMPILER_ID STREQUAL "AppleClang" AND CMAKE_CXX_COMPILER_VERSION VERSION_LESS 7.0))
   message(
     FATAL_ERROR
@@ -39,10 +39,8 @@ if((CMAKE_CXX_COMPILER_ID STREQUAL "Clang" AND CMAKE_CXX_COMPILER_VERSION VERSIO
     "You need one listed here: https://ccache.dev/platform-compiler-language-support.html")
 endif()
 
-# All Clang problems / special handling ccache has are because of version 3.5.
-# All GCC problems / special handling ccache has are because of version 4.8.4.
-if((CMAKE_CXX_COMPILER_ID STREQUAL "Clang" AND CMAKE_CXX_COMPILER_VERSION VERSION_LESS 3.6)
-    OR (CMAKE_CXX_COMPILER_ID STREQUAL "GNU" AND CMAKE_CXX_COMPILER_VERSION VERSION_LESS 5.0))
+if((CMAKE_CXX_COMPILER_ID STREQUAL "Clang" AND CMAKE_CXX_COMPILER_VERSION VERSION_LESS 4)
+    OR (CMAKE_CXX_COMPILER_ID STREQUAL "GNU" AND CMAKE_CXX_COMPILER_VERSION VERSION_LESS 6))
   message(
     WARNING
     "The compiler you are using is rather old.\n"
@@ -66,18 +64,17 @@ endif()
 message(STATUS "Ccache dev mode: ${CCACHE_DEV_MODE}")
 
 include(UseCcache)
-include(UseFastestLinker)
+if(NOT MSVC)
+  include(UseFastestLinker)
+endif()
 include(StandardSettings)
 include(StandardWarnings)
 include(CIBuildType)
 include(DefaultBuildType)
 
-if(NOT ${CMAKE_VERSION} VERSION_LESS "3.9")
-  cmake_policy(SET CMP0069 NEW)
-  option(ENABLE_IPO "Enable interprocedural (link time, LTO) optimization" OFF)
-  if(ENABLE_IPO)
-    set(CMAKE_INTERPROCEDURAL_OPTIMIZATION ON)
-  endif()
+option(ENABLE_IPO "Enable interprocedural (link time, LTO) optimization" OFF)
+if(ENABLE_IPO)
+  set(CMAKE_INTERPROCEDURAL_OPTIMIZATION ON)
 endif()
 
 #
@@ -86,10 +83,6 @@ endif()
 include(GNUInstallDirs)
 include(GenerateConfigurationFile)
 include(GenerateVersionFile)
-
-if(HAVE_SYS_MMAN_H AND HAVE_PTHREAD_MUTEXATTR_SETPSHARED)
-  set(INODE_CACHE_SUPPORTED 1)
-endif()
 
 #
 # Third party
@@ -103,6 +96,11 @@ endif()
 
 option(ZSTD_FROM_INTERNET "Download and use libzstd from the Internet" ${ZSTD_FROM_INTERNET_DEFAULT})
 find_package(zstd 1.1.2 REQUIRED)
+
+option(REDIS_STORAGE_BACKEND "Enable Redis secondary storage" ON)
+if(REDIS_STORAGE_BACKEND)
+  find_package(hiredis 0.13.3 REQUIRED)
+endif()
 
 #
 # Special flags
@@ -131,7 +129,10 @@ target_link_libraries(ccache PRIVATE standard_settings standard_warnings ccache_
 #
 # Documentation
 #
-add_subdirectory(doc)
+option(ENABLE_DOCUMENTATION "Enable documentation" ON)
+if(ENABLE_DOCUMENTATION)
+  add_subdirectory(doc)
+endif()
 
 #
 # Installation
@@ -174,26 +175,16 @@ endif()
 #
 # Special formatting targets
 #
-find_program(
-  CLANG_FORMAT_EXE
-  NAMES "clang-format"
-  DOC "Path to clang-format executable.")
-mark_as_advanced(CLANG_FORMAT_EXE) # Don't show in CMake UIs
+add_custom_target(
+  format
+  COMMAND misc/format-files --all
+  COMMENT "Formatting code"
+  USES_TERMINAL
+  WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR})
 
-if(NOT CLANG_FORMAT_EXE)
-  message(STATUS "clang-format not found")
-else()
-  add_custom_target(
-    format
-    COMMAND misc/format-files --all
-    COMMENT "Formatting code"
-    USES_TERMINAL
-    WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR})
-
-  add_custom_target(
-    check_format
-    COMMAND misc/format-files --all --check
-    COMMENT "Checking code formatting"
-    USES_TERMINAL
-    WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR})
-endif()
+add_custom_target(
+  check_format
+  COMMAND misc/format-files --all --check
+  COMMENT "Checking code formatting"
+  USES_TERMINAL
+  WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR})

@@ -1,5 +1,5 @@
 // Copyright (C) 2002-2007 Andrew Tridgell
-// Copyright (C) 2009-2020 Joel Rosdahl and other contributors
+// Copyright (C) 2009-2021 Joel Rosdahl and other contributors
 //
 // See doc/AUTHORS.adoc for a complete list of contributors.
 //
@@ -19,8 +19,6 @@
 
 #pragma once
 
-#include "system.hpp"
-
 #include "Config.hpp"
 
 #include "third_party/nonstd/string_view.hpp"
@@ -30,6 +28,7 @@
 
 class Context;
 
+extern const char CCACHE_NAME[];
 extern const char CCACHE_VERSION[];
 
 using FindExecutableFunction =

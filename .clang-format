@@ -1,8 +1,9 @@
-# This configuration should work with Clang-Format 6.0 and higher.
+# This configuration should work with Clang-Format 10 and higher.
 ---
 Language: Cpp
 BasedOnStyle: LLVM
 
+AllowAllConstructorInitializersOnNextLine: false
 AllowShortFunctionsOnASingleLine: None
 AlwaysBreakAfterReturnType: AllDefinitions
 AlwaysBreakBeforeMultilineStrings: true
@@ -25,12 +26,18 @@ IncludeBlocks: Regroup
 IncludeCategories:
   - Regex: '^"system.hpp"$'
     Priority: 1
-  - Regex: '^"third_party/'
-    Priority: 3
+  - Regex: '^["<]third_party/'
+    Priority: 4
+  # System headers:
+  - Regex: '\.h>$'
+    Priority: 5
+  # C++ headers:
+  - Regex: '^<[^.]+>$'
+    Priority: 6
   - Regex: '^"'
     Priority: 2
   - Regex: '.*'
-    Priority: 4
+    Priority: 3
 IndentPPDirectives: AfterHash
 KeepEmptyLinesAtTheStartOfBlocks: false
 PointerAlignment: Left

@@ -1,4 +1,4 @@
-// Copyright (C) 2019-2020 Joel Rosdahl and other contributors
+// Copyright (C) 2019-2021 Joel Rosdahl and other contributors
 //
 // See doc/AUTHORS.adoc for a complete list of contributors.
 //
@@ -18,10 +18,9 @@
 
 #pragma once
 
-#include "system.hpp"
-
 #include "NonCopyable.hpp"
 
+#include <cstdio>
 #include <string>
 
 class File : public NonCopyable
@@ -89,10 +88,8 @@ inline File::operator bool() const
   return m_file;
 }
 
-// clang-format off
 inline FILE*
 File::operator*() const
-// clang-format on
 {
   return m_file;
 }

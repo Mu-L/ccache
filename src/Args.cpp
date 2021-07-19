@@ -1,4 +1,4 @@
-// Copyright (C) 2020 Joel Rosdahl and other contributors
+// Copyright (C) 2020-2021 Joel Rosdahl and other contributors
 //
 // See doc/AUTHORS.adoc for a complete list of contributors.
 //
@@ -19,6 +19,8 @@
 #include "Args.hpp"
 
 #include "Util.hpp"
+
+#include <util/string.hpp>
 
 using nonstd::nullopt;
 using nonstd::optional;
@@ -169,8 +171,8 @@ Args::erase_with_prefix(string_view prefix)
 {
   m_args.erase(std::remove_if(m_args.begin(),
                               m_args.end(),
-                              [&prefix](const std::string& s) {
-                                return Util::starts_with(s, prefix);
+                              [&prefix](const auto& s) {
+                                return util::starts_with(s, prefix);
                               }),
                m_args.end());
 }

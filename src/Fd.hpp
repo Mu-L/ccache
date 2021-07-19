@@ -1,4 +1,4 @@
-// Copyright (C) 2020 Joel Rosdahl and other contributors
+// Copyright (C) 2020-2021 Joel Rosdahl and other contributors
 //
 // See doc/AUTHORS.adoc for a complete list of contributors.
 //
@@ -17,8 +17,6 @@
 // Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
 
 #pragma once
-
-#include "system.hpp"
 
 #include "NonCopyable.hpp"
 #include "assertions.hpp"
@@ -72,10 +70,8 @@ Fd::get() const
   return m_fd;
 }
 
-// clang-format off
 inline int
 Fd::operator*() const
-// clang-format on
 {
   ASSERT(m_fd != -1);
   return m_fd;
@@ -87,12 +83,6 @@ Fd::operator=(Fd&& other_fd) noexcept
   close();
   m_fd = other_fd.release();
   return *this;
-}
-
-inline bool
-Fd::close()
-{
-  return m_fd != -1 && ::close(release()) == 0;
 }
 
 inline int

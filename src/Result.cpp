@@ -1,4 +1,4 @@
-// Copyright (C) 2019-2020 Joel Rosdahl and other contributors
+// Copyright (C) 2019-2021 Joel Rosdahl and other contributors
 //
 // See doc/AUTHORS.adoc for a complete list of contributors.
 //
@@ -31,6 +31,17 @@
 #include "Util.hpp"
 #include "exceptions.hpp"
 #include "fmtmacros.hpp"
+
+#include <core/wincompat.hpp>
+#include <util/path.hpp>
+
+#include <fcntl.h>
+#include <sys/stat.h>
+#include <sys/types.h>
+
+#ifdef HAVE_UNISTD_H
+#  include <unistd.h>
+#endif
 
 #include <algorithm>
 
@@ -182,7 +193,7 @@ gcno_file_in_mangled_form(const Context& ctx)
 {
   const auto& output_obj = ctx.args_info.output_obj;
   const std::string abs_output_obj =
-    Util::is_absolute_path(output_obj)
+    util::is_absolute_path(output_obj)
       ? output_obj
       : FMT("{}/{}", ctx.apparent_cwd, output_obj);
   std::string hashified_obj = abs_output_obj;
@@ -194,6 +205,14 @@ std::string
 gcno_file_in_unmangled_form(const Context& ctx)
 {
   return Util::change_extension(ctx.args_info.output_obj, ".gcno");
+}
+
+FileSizeAndCountDiff&
+FileSizeAndCountDiff::operator+=(const FileSizeAndCountDiff& other)
+{
+  size_kibibyte += other.size_kibibyte;
+  count += other.count;
+  return *this;
 }
 
 Result::Reader::Reader(const std::string& result_path)
@@ -220,13 +239,20 @@ Result::Reader::read(Consumer& consumer)
 bool
 Reader::read_result(Consumer& consumer)
 {
-  File file(m_result_path, "rb");
-  if (!file) {
-    // Cache miss.
-    return false;
+  FILE* file_stream;
+  File file;
+  if (m_result_path == "-") {
+    file_stream = stdin;
+  } else {
+    file = File(m_result_path, "rb");
+    if (!file) {
+      // Cache miss.
+      return false;
+    }
+    file_stream = file.get();
   }
 
-  CacheEntryReader cache_entry_reader(file.get(), k_magic, k_version);
+  CacheEntryReader cache_entry_reader(file_stream, k_magic, k_version);
 
   consumer.on_header(cache_entry_reader);
 
@@ -273,7 +299,7 @@ Reader::read_entry(CacheEntryReader& cache_entry_reader,
   if (marker == k_embedded_file_marker) {
     consumer.on_entry_start(entry_number, file_type, file_len, nullopt);
 
-    uint8_t buf[READ_BUFFER_SIZE];
+    uint8_t buf[CCACHE_READ_BUFFER_SIZE];
     size_t remain = file_len;
     while (remain > 0) {
       size_t n = std::min(remain, sizeof(buf));
@@ -300,7 +326,8 @@ Reader::read_entry(CacheEntryReader& cache_entry_reader,
 }
 
 Writer::Writer(Context& ctx, const std::string& result_path)
-  : m_ctx(ctx), m_result_path(result_path)
+  : m_ctx(ctx),
+    m_result_path(result_path)
 {
 }
 
@@ -310,20 +337,20 @@ Writer::write(FileType file_type, const std::string& file_path)
   m_entries_to_write.emplace_back(file_type, file_path);
 }
 
-optional<std::string>
+nonstd::expected<FileSizeAndCountDiff, std::string>
 Writer::finalize()
 {
   try {
-    do_finalize();
-    return nullopt;
+    return do_finalize();
   } catch (const Error& e) {
-    return e.what();
+    return nonstd::make_unexpected(e.what());
   }
 }
 
-void
+FileSizeAndCountDiff
 Writer::do_finalize()
 {
+  FileSizeAndCountDiff file_size_and_count_diff{0, 0};
   uint64_t payload_size = 0;
   payload_size += 1; // n_entries
   for (const auto& pair : m_entries_to_write) {
@@ -350,7 +377,7 @@ Writer::do_finalize()
   for (const auto& pair : m_entries_to_write) {
     const auto file_type = pair.first;
     const auto& path = pair.second;
-    LOG("Storing result {}", path);
+    LOG("Storing result file {}", path);
 
     const bool store_raw = should_store_raw_file(m_ctx.config, file_type);
     uint64_t file_size = Stat::stat(path, Stat::OnError::throw_error).size();
@@ -368,7 +395,7 @@ Writer::do_finalize()
     writer.write(file_size);
 
     if (store_raw) {
-      write_raw_file_entry(path, entry_number);
+      file_size_and_count_diff += write_raw_file_entry(path, entry_number);
     } else {
       write_embedded_file_entry(writer, path, file_size);
     }
@@ -378,6 +405,8 @@ Writer::do_finalize()
 
   writer.finalize();
   atomic_result_file.commit();
+
+  return file_size_and_count_diff;
 }
 
 void
@@ -392,7 +421,7 @@ Result::Writer::write_embedded_file_entry(CacheEntryWriter& writer,
 
   uint64_t remain = file_size;
   while (remain > 0) {
-    uint8_t buf[READ_BUFFER_SIZE];
+    uint8_t buf[CCACHE_READ_BUFFER_SIZE];
     size_t n = std::min(remain, static_cast<uint64_t>(sizeof(buf)));
     ssize_t bytes_read = read(*file, buf, n);
     if (bytes_read == -1) {
@@ -409,7 +438,7 @@ Result::Writer::write_embedded_file_entry(CacheEntryWriter& writer,
   }
 }
 
-void
+FileSizeAndCountDiff
 Result::Writer::write_raw_file_entry(const std::string& path,
                                      uint32_t entry_number)
 {
@@ -422,11 +451,10 @@ Result::Writer::write_raw_file_entry(const std::string& path,
       "Failed to store {} as raw file {}: {}", path, raw_file, e.what());
   }
   const auto new_stat = Stat::stat(raw_file);
-  m_ctx.counter_updates.increment(
-    Statistic::cache_size_kibibyte,
-    Util::size_change_kibibyte(old_stat, new_stat));
-  m_ctx.counter_updates.increment(Statistic::files_in_cache,
-                                  (new_stat ? 1 : 0) - (old_stat ? 1 : 0));
+  return {
+    Util::size_change_kibibyte(old_stat, new_stat),
+    (new_stat ? 1 : 0) - (old_stat ? 1 : 0),
+  };
 }
 
 } // namespace Result

@@ -1,5 +1,5 @@
 // Copyright (C) 2002 Andrew Tridgell
-// Copyright (C) 2011-2020 Joel Rosdahl and other contributors
+// Copyright (C) 2011-2021 Joel Rosdahl and other contributors
 //
 // See doc/AUTHORS.adoc for a complete list of contributors.
 //
@@ -27,10 +27,22 @@
 #include "Stat.hpp"
 #include "TemporaryFile.hpp"
 #include "Util.hpp"
+#include "Win32Util.hpp"
 #include "fmtmacros.hpp"
 
+#include <core/wincompat.hpp>
+#include <util/path.hpp>
+
+#ifdef HAVE_UNISTD_H
+#  include <unistd.h>
+#endif
+
+#ifdef HAVE_SYS_WAIT_H
+#  include <sys/wait.h>
+#endif
+
 #ifdef _WIN32
-#  include "Win32Util.hpp"
+#  include "Finalizer.hpp"
 #endif
 
 using nonstd::string_view;
@@ -127,13 +139,20 @@ win32execute(const char* path,
   std::string args = Win32Util::argv_to_string(argv, sh);
   std::string full_path = Win32Util::add_exe_suffix(path);
   std::string tmp_file_path;
+
+  Finalizer tmp_file_remover([&tmp_file_path] {
+    if (!tmp_file_path.empty()) {
+      Util::unlink_tmp(tmp_file_path);
+    }
+  });
+
   if (args.length() > 8192) {
     TemporaryFile tmp_file(FMT("{}/cmd_args", temp_dir));
     args = Win32Util::argv_to_string(argv + 1, sh, true);
     Util::write_fd(*tmp_file.fd, args.data(), args.length());
     args = FMT("{} @{}", full_path, tmp_file.path);
     tmp_file_path = tmp_file.path;
-    LOG("args from file {}", tmp_file.path);
+    LOG("Arguments from {}", tmp_file.path);
   }
   BOOL ret = CreateProcess(full_path.c_str(),
                            const_cast<char*>(args.c_str()),
@@ -155,16 +174,9 @@ win32execute(const char* path,
         full_path,
         Win32Util::error_message(error),
         error);
-    if (!tmp_file_path.empty()) {
-      Util::unlink_tmp(tmp_file_path);
-    }
     return -1;
   }
   WaitForSingleObject(pi.hProcess, INFINITE);
-
-  if (!tmp_file_path.empty()) {
-    Util::unlink_tmp(tmp_file_path);
-  }
 
   DWORD exitcode;
   GetExitCodeProcess(pi.hProcess, &exitcode);
@@ -229,7 +241,7 @@ execute(Context& ctx, const char* const* argv, Fd&& fd_out, Fd&& fd_err)
 }
 
 void
-execute_noreturn(const char* const* argv, const std::string& /* unused */)
+execute_noreturn(const char* const* argv, const std::string& /*temp_dir*/)
 {
   execv(argv[0], const_cast<char* const*>(argv));
 }
@@ -240,7 +252,7 @@ find_executable(const Context& ctx,
                 const std::string& name,
                 const std::string& exclude_name)
 {
-  if (Util::is_absolute_path(name)) {
+  if (util::is_absolute_path(name)) {
     return name;
   }
 
@@ -267,7 +279,7 @@ find_executable_in_path(const std::string& name,
 
   // Search the path looking for the first compiler of the right name that isn't
   // us.
-  for (const std::string& dir : Util::split_into_strings(path, PATH_DELIM)) {
+  for (const std::string& dir : util::split_path_list(path)) {
 #ifdef _WIN32
     char namebuf[MAX_PATH];
     int ret = SearchPath(

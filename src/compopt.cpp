@@ -45,6 +45,8 @@
 // The option only affects compilation; not passed to the preprocessor.
 #define AFFECTS_COMP (1 << 6)
 
+#define ARRAY_SIZE(array) (sizeof(array) / sizeof((array)[0]))
+
 struct CompOpt
 {
   const char* name;
@@ -55,6 +57,7 @@ const CompOpt compopts[] = {
   {"--Werror", TAKES_ARG},                            // nvcc
   {"--analyze", TOO_HARD},                            // Clang
   {"--compiler-bindir", AFFECTS_CPP | TAKES_ARG},     // nvcc
+  {"--config", TAKES_ARG},                            // Clang
   {"--libdevice-directory", AFFECTS_CPP | TAKES_ARG}, // nvcc
   {"--output-directory", AFFECTS_CPP | TAKES_ARG},    // nvcc
   {"--param", TAKES_ARG},
@@ -62,6 +65,7 @@ const CompOpt compopts[] = {
   {"--save-temps=cwd", TOO_HARD},
   {"--save-temps=obj", TOO_HARD},
   {"--serialize-diagnostics", TAKES_ARG | TAKES_PATH},
+  {"--specs", TAKES_ARG},
   {"-A", TAKES_ARG},
   {"-B", TAKES_ARG | TAKES_CONCAT_ARG | TAKES_PATH},
   {"-D", AFFECTS_CPP | TAKES_ARG | TAKES_CONCAT_ARG},
@@ -76,7 +80,6 @@ const CompOpt compopts[] = {
   {"-MM", TOO_HARD},
   {"-MQ", TAKES_ARG},
   {"-MT", TAKES_ARG},
-  {"-P", TOO_HARD},
   {"-U", AFFECTS_CPP | TAKES_ARG | TAKES_CONCAT_ARG},
   {"-V", TAKES_ARG},
   {"-Wa,", TAKES_CONCAT_ARG | AFFECTS_COMP},
@@ -116,6 +119,7 @@ const CompOpt compopts[] = {
   {"-iquote", AFFECTS_CPP | TAKES_ARG | TAKES_CONCAT_ARG | TAKES_PATH},
   {"-isysroot", AFFECTS_CPP | TAKES_ARG | TAKES_CONCAT_ARG | TAKES_PATH},
   {"-isystem", AFFECTS_CPP | TAKES_ARG | TAKES_CONCAT_ARG | TAKES_PATH},
+  {"-ivfsoverlay", TAKES_ARG},
   {"-iwithprefix", AFFECTS_CPP | TAKES_ARG | TAKES_CONCAT_ARG | TAKES_PATH},
   {"-iwithprefixbefore",
    AFFECTS_CPP | TAKES_ARG | TAKES_CONCAT_ARG | TAKES_PATH},
@@ -132,6 +136,7 @@ const CompOpt compopts[] = {
   {"-save-temps", TOO_HARD},
   {"-save-temps=cwd", TOO_HARD},
   {"-save-temps=obj", TOO_HARD},
+  {"-specs", TAKES_ARG},
   {"-stdlib=", AFFECTS_CPP | TAKES_CONCAT_ARG},
   {"-trigraphs", AFFECTS_CPP},
   {"-u", TAKES_ARG | TAKES_CONCAT_ARG},

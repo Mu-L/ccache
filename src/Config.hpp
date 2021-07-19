@@ -18,13 +18,12 @@
 
 #pragma once
 
-#include "system.hpp"
-
 #include "NonCopyable.hpp"
 #include "Util.hpp"
 
 #include "third_party/nonstd/optional.hpp"
 
+#include <cstdint>
 #include <functional>
 #include <limits>
 #include <string>
@@ -34,12 +33,12 @@ enum class CompilerType { auto_guess, clang, gcc, nvcc, other, pump };
 
 std::string compiler_type_to_string(CompilerType compiler_type);
 
-class Config
+class Config : NonCopyable
 {
 public:
   Config() = default;
-  Config(Config&) = default;
-  Config& operator=(const Config&) = default;
+
+  void read();
 
   bool absolute_paths_in_stderr() const;
   const std::string& base_dir() const;
@@ -75,18 +74,20 @@ public:
   bool read_only_direct() const;
   bool recache() const;
   bool run_second_cpp() const;
+  const std::string& secondary_storage() const;
   uint32_t sloppiness() const;
   bool stats() const;
+  const std::string& stats_log() const;
   const std::string& temporary_dir() const;
-  uint32_t umask() const;
+  nonstd::optional<mode_t> umask() const;
 
   void set_base_dir(const std::string& value);
   void set_cache_dir(const std::string& value);
-  void set_cpp_extension(const std::string& value);
   void set_compiler(const std::string& value);
   void set_compiler_type(CompilerType value);
-  void set_depend_mode(bool value);
+  void set_cpp_extension(const std::string& value);
   void set_debug(bool value);
+  void set_depend_mode(bool value);
   void set_direct_mode(bool value);
   void set_ignore_options(const std::string& value);
   void set_inode_cache(bool value);
@@ -167,10 +168,12 @@ private:
   bool m_read_only_direct = false;
   bool m_recache = false;
   bool m_run_second_cpp = true;
+  std::string m_secondary_storage;
   uint32_t m_sloppiness = 0;
   bool m_stats = true;
+  std::string m_stats_log;
   std::string m_temporary_dir;
-  uint32_t m_umask = std::numeric_limits<uint32_t>::max(); // Don't set umask
+  nonstd::optional<mode_t> m_umask;
 
   bool m_temporary_dir_configured_explicitly = false;
 
@@ -389,6 +392,12 @@ Config::run_second_cpp() const
   return m_run_second_cpp;
 }
 
+inline const std::string&
+Config::secondary_storage() const
+{
+  return m_secondary_storage;
+}
+
 inline uint32_t
 Config::sloppiness() const
 {
@@ -402,12 +411,18 @@ Config::stats() const
 }
 
 inline const std::string&
+Config::stats_log() const
+{
+  return m_stats_log;
+}
+
+inline const std::string&
 Config::temporary_dir() const
 {
   return m_temporary_dir;
 }
 
-inline uint32_t
+inline nonstd::optional<mode_t>
 Config::umask() const
 {
   return m_umask;

@@ -20,13 +20,16 @@
 #include "../src/Finalizer.hpp"
 #include "TestUtil.hpp"
 
+#include <core/wincompat.hpp>
+
 #include "third_party/doctest.h"
 #include "third_party/win32/mktemp.h"
+
+#include <sddl.h>
 
 #include <algorithm>
 #include <memory>
 #include <ostream>
-#include <sddl.h>
 #include <utility>
 
 using TestUtil::TestContext;

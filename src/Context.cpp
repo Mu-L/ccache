@@ -1,4 +1,4 @@
-// Copyright (C) 2020 Joel Rosdahl and other contributors
+// Copyright (C) 2020-2021 Joel Rosdahl and other contributors
 //
 // See doc/AUTHORS.adoc for a complete list of contributors.
 //
@@ -24,6 +24,13 @@
 #include "Util.hpp"
 #include "hashutil.hpp"
 
+#include <core/wincompat.hpp>
+#include <util/path.hpp>
+
+#ifdef HAVE_UNISTD_H
+#  include <unistd.h>
+#endif
+
 #include <algorithm>
 #include <string>
 #include <vector>
@@ -32,12 +39,29 @@ using nonstd::string_view;
 
 Context::Context()
   : actual_cwd(Util::get_actual_cwd()),
-    apparent_cwd(Util::get_apparent_cwd(actual_cwd))
+    apparent_cwd(Util::get_apparent_cwd(actual_cwd)),
+    storage(config)
 #ifdef INODE_CACHE_SUPPORTED
     ,
     inode_cache(config)
 #endif
 {
+  config.read();
+  Logging::init(config);
+
+  ignore_header_paths =
+    util::split_path_list(config.ignore_headers_in_manifest());
+  set_ignore_options(Util::split_into_strings(config.ignore_options(), " "));
+
+  // Set default umask for all files created by ccache from now on (if
+  // configured to). This is intentionally done after calling Logging::init so
+  // that the log file won't be affected by the umask but before creating the
+  // initial configuration file. The intention is that all files and directories
+  // in the cache directory should be affected by the configured umask and that
+  // no other files and directories should.
+  if (config.umask()) {
+    original_umask = umask(*config.umask());
+  }
 }
 
 Context::~Context()

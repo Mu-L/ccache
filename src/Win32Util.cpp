@@ -1,4 +1,4 @@
-// Copyright (C) 2020 Joel Rosdahl and other contributors
+// Copyright (C) 2020-2021 Joel Rosdahl and other contributors
 //
 // See doc/AUTHORS.adoc for a complete list of contributors.
 //
@@ -22,6 +22,26 @@
 
 #include <chrono>
 #include <thread>
+
+namespace {
+
+template<typename Proc>
+Proc*
+get_proc_address(HMODULE module, const char* proc_name)
+{
+#if defined __GNUC__
+#  pragma GCC diagnostic push
+#  if __GNUC__ >= 8
+#    pragma GCC diagnostic ignored "-Wcast-function-type"
+#  endif
+#endif
+  return reinterpret_cast<Proc*>(GetProcAddress(module, proc_name));
+#if defined __GNUC__
+#  pragma GCC diagnostic pop
+#endif
+}
+
+} // namespace
 
 namespace Win32Util {
 
@@ -97,6 +117,14 @@ argv_to_string(const char* const* argv,
   return result;
 }
 
+NTSTATUS
+get_last_ntstatus()
+{
+  static auto* get_last_ntstatus_fn = get_proc_address<NTSTATUS NTAPI()>(
+    GetModuleHandleA("ntdll.dll"), "RtlGetLastNtStatus");
+  return get_last_ntstatus_fn();
+}
+
 } // namespace Win32Util
 
 // From: https://stackoverflow.com/a/58162122/262458
@@ -114,12 +142,6 @@ gettimeofday(struct timeval* tp, struct timezone* /*tzp*/)
   return 0;
 }
 #endif
-
-void
-usleep(int64_t usec)
-{
-  std::this_thread::sleep_for(std::chrono::microseconds(usec));
-}
 
 struct tm*
 localtime_r(time_t* _clock, struct tm* _result)

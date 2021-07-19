@@ -1,4 +1,4 @@
-// Copyright (C) 2019-2020 Joel Rosdahl and other contributors
+// Copyright (C) 2019-2021 Joel Rosdahl and other contributors
 //
 // See doc/AUTHORS.adoc for a complete list of contributors.
 //
@@ -22,8 +22,16 @@
 #include "../src/fmtmacros.hpp"
 #include "TestUtil.hpp"
 
+#include <core/wincompat.hpp>
+
 #include "third_party/doctest.h"
 #include "third_party/nonstd/optional.hpp"
+
+#include <fcntl.h>
+
+#ifdef HAVE_UNISTD_H
+#  include <unistd.h>
+#endif
 
 #include <algorithm>
 
@@ -169,24 +177,6 @@ TEST_CASE("Util::strip_ansi_csi_seqs")
   CHECK(Util::strip_ansi_csi_seqs(input) == "Normal, bold, red, bold green.\n");
 }
 
-TEST_CASE("Util::ends_with")
-{
-  CHECK(Util::ends_with("", ""));
-  CHECK(Util::ends_with("x", ""));
-  CHECK(Util::ends_with("x", "x"));
-  CHECK(Util::ends_with("xy", ""));
-  CHECK(Util::ends_with("xy", "y"));
-  CHECK(Util::ends_with("xy", "xy"));
-  CHECK(Util::ends_with("xyz", ""));
-  CHECK(Util::ends_with("xyz", "z"));
-  CHECK(Util::ends_with("xyz", "yz"));
-  CHECK(Util::ends_with("xyz", "xyz"));
-
-  CHECK_FALSE(Util::ends_with("", "x"));
-  CHECK_FALSE(Util::ends_with("x", "y"));
-  CHECK_FALSE(Util::ends_with("x", "xy"));
-}
-
 TEST_CASE("Util::ensure_dir_exists")
 {
   TestContext test_context;
@@ -249,9 +239,7 @@ TEST_CASE("Util::for_each_level_1_subdir")
   std::vector<std::string> actual;
   Util::for_each_level_1_subdir(
     "cache_dir",
-    [&](const std::string& subdir, const Util::ProgressReceiver&) {
-      actual.push_back(subdir);
-    },
+    [&](const auto& subdir, const auto&) { actual.push_back(subdir); },
     [](double) {});
 
   std::vector<std::string> expected = {
@@ -356,8 +344,8 @@ TEST_CASE("Util::get_extension")
 static inline std::string
 os_path(std::string path)
 {
-#if !defined(HAVE_DIRENT_H) && DIR_DELIM_CH != '/'
-  std::replace(path.begin(), path.end(), '/', DIR_DELIM_CH);
+#if defined(_WIN32) && !defined(HAVE_DIRENT_H)
+  std::replace(path.begin(), path.end(), '/', '\\');
 #endif
 
   return path;
@@ -397,10 +385,9 @@ TEST_CASE("Util::get_level_1_files")
 
     // Files within a level are in arbitrary order, sort them to be able to
     // verify them.
-    std::sort(
-      files.begin(), files.end(), [](const CacheFile& f1, const CacheFile& f2) {
-        return f1.path() < f2.path();
-      });
+    std::sort(files.begin(), files.end(), [](const auto& f1, const auto& f2) {
+      return f1.path() < f2.path();
+    });
 
     CHECK(files[0].path() == os_path("0/1/file_b"));
     CHECK(files[0].lstat().size() == 1);
@@ -440,14 +427,6 @@ TEST_CASE("Util::get_relative_path")
   CHECK(Util::get_relative_path("/a/b", "/c") == "../../c");
   CHECK(Util::get_relative_path("/", "/a/b") == "a/b");
 #endif
-}
-
-TEST_CASE("Util::get_path_in_cache")
-{
-  CHECK(Util::get_path_in_cache("/zz/ccache", 1, "ABCDEF.suffix")
-        == "/zz/ccache/A/BCDEF.suffix");
-  CHECK(Util::get_path_in_cache("/zz/ccache", 4, "ABCDEF.suffix")
-        == "/zz/ccache/A/B/C/D/EF.suffix");
 }
 
 TEST_CASE("Util::hard_link")
@@ -532,22 +511,6 @@ TEST_CASE("Util::int_to_big_endian")
   CHECK(bytes[5] == 0x54);
   CHECK(bytes[6] == 0x4b);
   CHECK(bytes[7] == 0xca);
-}
-
-TEST_CASE("Util::is_absolute_path")
-{
-#ifdef _WIN32
-  CHECK(Util::is_absolute_path("C:/"));
-  CHECK(Util::is_absolute_path("C:\\foo/fie"));
-  CHECK(Util::is_absolute_path("/C:\\foo/fie")); // MSYS/Cygwin path
-  CHECK(!Util::is_absolute_path(""));
-  CHECK(!Util::is_absolute_path("foo\\fie/fum"));
-  CHECK(!Util::is_absolute_path("C:foo/fie"));
-#endif
-  CHECK(Util::is_absolute_path("/"));
-  CHECK(Util::is_absolute_path("/foo/fie"));
-  CHECK(!Util::is_absolute_path(""));
-  CHECK(!Util::is_absolute_path("foo/fie"));
 }
 
 TEST_CASE("Util::is_dir_separator")
@@ -700,46 +663,6 @@ TEST_CASE("Util::parse_duration")
     "invalid suffix (supported: d (day) and s (second)): \"2\"");
 }
 
-TEST_CASE("Util::parse_signed")
-{
-  CHECK(Util::parse_signed("0") == 0);
-  CHECK(Util::parse_signed("2") == 2);
-  CHECK(Util::parse_signed("-17") == -17);
-  CHECK(Util::parse_signed("42") == 42);
-  CHECK(Util::parse_signed("0666") == 666);
-  CHECK(Util::parse_signed(" 777 ") == 777);
-
-  CHECK_THROWS_WITH(Util::parse_signed(""), "invalid integer: \"\"");
-  CHECK_THROWS_WITH(Util::parse_signed("x"), "invalid integer: \"x\"");
-  CHECK_THROWS_WITH(Util::parse_signed("0x"), "invalid integer: \"0x\"");
-  CHECK_THROWS_WITH(Util::parse_signed("0x4"), "invalid integer: \"0x4\"");
-
-  // Custom description not used for invalid value.
-  CHECK_THROWS_WITH(Util::parse_signed("apple", nullopt, nullopt, "banana"),
-                    "invalid integer: \"apple\"");
-
-  // Boundary values.
-  CHECK_THROWS_WITH(Util::parse_signed("-9223372036854775809"),
-                    "invalid integer: \"-9223372036854775809\"");
-  CHECK(Util::parse_signed("-9223372036854775808") == INT64_MIN);
-  CHECK(Util::parse_signed("9223372036854775807") == INT64_MAX);
-  CHECK_THROWS_WITH(Util::parse_signed("9223372036854775808"),
-                    "invalid integer: \"9223372036854775808\"");
-
-  // Min and max values.
-  CHECK_THROWS_WITH(Util::parse_signed("-2", -1, 1),
-                    "integer must be between -1 and 1");
-  CHECK(Util::parse_signed("-1", -1, 1) == -1);
-  CHECK(Util::parse_signed("0", -1, 1) == 0);
-  CHECK(Util::parse_signed("1", -1, 1) == 1);
-  CHECK_THROWS_WITH(Util::parse_signed("2", -1, 1),
-                    "integer must be between -1 and 1");
-
-  // Custom description used for boundary violation.
-  CHECK_THROWS_WITH(Util::parse_signed("0", 1, 2, "banana"),
-                    "banana must be between 1 and 2");
-}
-
 TEST_CASE("Util::parse_size")
 {
   CHECK(Util::parse_size("0") == 0);
@@ -762,35 +685,6 @@ TEST_CASE("Util::parse_size")
   CHECK_THROWS_WITH(Util::parse_size(""), "invalid size: \"\"");
   CHECK_THROWS_WITH(Util::parse_size("x"), "invalid size: \"x\"");
   CHECK_THROWS_WITH(Util::parse_size("10x"), "invalid size: \"10x\"");
-}
-
-TEST_CASE("Util::parse_unsigned")
-{
-  CHECK(Util::parse_unsigned("0") == 0);
-  CHECK(Util::parse_unsigned("2") == 2);
-  CHECK(Util::parse_unsigned("42") == 42);
-  CHECK(Util::parse_unsigned("0666") == 666);
-  CHECK(Util::parse_unsigned(" 777 ") == 777);
-
-  CHECK_THROWS_WITH(Util::parse_unsigned(""), "invalid unsigned integer: \"\"");
-  CHECK_THROWS_WITH(Util::parse_unsigned("x"),
-                    "invalid unsigned integer: \"x\"");
-  CHECK_THROWS_WITH(Util::parse_unsigned("0x"),
-                    "invalid unsigned integer: \"0x\"");
-  CHECK_THROWS_WITH(Util::parse_unsigned("0x4"),
-                    "invalid unsigned integer: \"0x4\"");
-
-  // Custom description not used for invalid value.
-  CHECK_THROWS_WITH(Util::parse_unsigned("apple", nullopt, nullopt, "banana"),
-                    "invalid unsigned integer: \"apple\"");
-
-  // Boundary values.
-  CHECK_THROWS_WITH(Util::parse_unsigned("-1"),
-                    "invalid unsigned integer: \"-1\"");
-  CHECK(Util::parse_unsigned("0") == 0);
-  CHECK(Util::parse_unsigned("18446744073709551615") == UINT64_MAX);
-  CHECK_THROWS_WITH(Util::parse_unsigned("18446744073709551616"),
-                    "invalid unsigned integer: \"18446744073709551616\"");
 }
 
 TEST_CASE("Util::read_file and Util::write_file")
@@ -861,133 +755,8 @@ TEST_CASE("Util::same_program_name")
 #endif
 }
 
-TEST_CASE("Util::split_into_views")
-{
-  {
-    CHECK(Util::split_into_views("", "/").empty());
-  }
-  {
-    CHECK(Util::split_into_views("///", "/").empty());
-  }
-  {
-    auto s = Util::split_into_views("a/b", "/");
-    REQUIRE(s.size() == 2);
-    CHECK(s.at(0) == "a");
-    CHECK(s.at(1) == "b");
-  }
-  {
-    auto s = Util::split_into_views("a/b", "x");
-    REQUIRE(s.size() == 1);
-    CHECK(s.at(0) == "a/b");
-  }
-  {
-    auto s = Util::split_into_views("a/b:c", "/:");
-    REQUIRE(s.size() == 3);
-    CHECK(s.at(0) == "a");
-    CHECK(s.at(1) == "b");
-    CHECK(s.at(2) == "c");
-  }
-  {
-    auto s = Util::split_into_views(":a//b..:.c/:/.", "/:.");
-    REQUIRE(s.size() == 3);
-    CHECK(s.at(0) == "a");
-    CHECK(s.at(1) == "b");
-    CHECK(s.at(2) == "c");
-  }
-  {
-    auto s = Util::split_into_views(".0.1.2.3.4.5.6.7.8.9.", "/:.+_abcdef");
-    REQUIRE(s.size() == 10);
-    CHECK(s.at(0) == "0");
-    CHECK(s.at(9) == "9");
-  }
-}
-
-TEST_CASE("Util::split_into_strings")
-{
-  {
-    CHECK(Util::split_into_strings("", "/").empty());
-  }
-  {
-    CHECK(Util::split_into_strings("///", "/").empty());
-  }
-  {
-    auto s = Util::split_into_strings("a/b", "/");
-    REQUIRE(s.size() == 2);
-    CHECK(s.at(0) == "a");
-    CHECK(s.at(1) == "b");
-  }
-  {
-    auto s = Util::split_into_strings("a/b", "x");
-    REQUIRE(s.size() == 1);
-    CHECK(s.at(0) == "a/b");
-  }
-  {
-    auto s = Util::split_into_strings("a/b:c", "/:");
-    REQUIRE(s.size() == 3);
-    CHECK(s.at(0) == "a");
-    CHECK(s.at(1) == "b");
-    CHECK(s.at(2) == "c");
-  }
-  {
-    auto s = Util::split_into_strings(":a//b..:.c/:/.", "/:.");
-    REQUIRE(s.size() == 3);
-    CHECK(s.at(0) == "a");
-    CHECK(s.at(1) == "b");
-    CHECK(s.at(2) == "c");
-  }
-  {
-    auto s = Util::split_into_strings(".0.1.2.3.4.5.6.7.8.9.", "/:.+_abcdef");
-    REQUIRE(s.size() == 10);
-    CHECK(s.at(0) == "0");
-    CHECK(s.at(9) == "9");
-  }
-}
-
-TEST_CASE("Util::starts_with")
-{
-  // starts_with(const char*, string_view)
-  CHECK(Util::starts_with("", ""));
-  CHECK(Util::starts_with("x", ""));
-  CHECK(Util::starts_with("x", "x"));
-  CHECK(Util::starts_with("xy", ""));
-  CHECK(Util::starts_with("xy", "x"));
-  CHECK(Util::starts_with("xy", "xy"));
-  CHECK(Util::starts_with("xyz", ""));
-  CHECK(Util::starts_with("xyz", "x"));
-  CHECK(Util::starts_with("xyz", "xy"));
-  CHECK(Util::starts_with("xyz", "xyz"));
-
-  CHECK_FALSE(Util::starts_with("", "x"));
-  CHECK_FALSE(Util::starts_with("x", "y"));
-  CHECK_FALSE(Util::starts_with("x", "xy"));
-
-  // starts_with(string_view, string_view)
-  CHECK(Util::starts_with(std::string(""), ""));
-  CHECK(Util::starts_with(std::string("x"), ""));
-  CHECK(Util::starts_with(std::string("x"), "x"));
-  CHECK(Util::starts_with(std::string("xy"), ""));
-  CHECK(Util::starts_with(std::string("xy"), "x"));
-  CHECK(Util::starts_with(std::string("xy"), "xy"));
-  CHECK(Util::starts_with(std::string("xyz"), ""));
-  CHECK(Util::starts_with(std::string("xyz"), "x"));
-  CHECK(Util::starts_with(std::string("xyz"), "xy"));
-  CHECK(Util::starts_with(std::string("xyz"), "xyz"));
-
-  CHECK_FALSE(Util::starts_with(std::string(""), "x"));
-  CHECK_FALSE(Util::starts_with(std::string("x"), "y"));
-  CHECK_FALSE(Util::starts_with(std::string("x"), "xy"));
-}
-
-TEST_CASE("Util::strip_whitespace")
-{
-  CHECK(Util::strip_whitespace("") == "");
-  CHECK(Util::strip_whitespace("x") == "x");
-  CHECK(Util::strip_whitespace(" x") == "x");
-  CHECK(Util::strip_whitespace("x ") == "x");
-  CHECK(Util::strip_whitespace(" x ") == "x");
-  CHECK(Util::strip_whitespace(" \n\tx \n\t") == "x");
-  CHECK(Util::strip_whitespace("  x  y  ") == "x  y");
-}
+// Util::split_into_strings and Util::split_into_views are tested implicitly in
+// test_util_Tokenizer.cpp.
 
 TEST_CASE("Util::to_lowercase")
 {

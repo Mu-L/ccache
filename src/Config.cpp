@@ -20,13 +20,23 @@
 
 #include "AtomicFile.hpp"
 #include "Compression.hpp"
+#include "MiniTrace.hpp"
 #include "Sloppiness.hpp"
 #include "Util.hpp"
 #include "assertions.hpp"
 #include "exceptions.hpp"
 #include "fmtmacros.hpp"
 
+#include <core/wincompat.hpp>
+#include <util/expected.hpp>
+#include <util/path.hpp>
+#include <util/string.hpp>
+
 #include "third_party/fmt/core.h"
+
+#ifdef HAVE_UNISTD_H
+#  include <unistd.h>
+#endif
 
 #include <algorithm>
 #include <cassert>
@@ -38,6 +48,14 @@
 
 using nonstd::nullopt;
 using nonstd::optional;
+
+#if defined(_MSC_VER)
+#  define DLLIMPORT __declspec(dllimport)
+#else
+#  define DLLIMPORT
+#endif
+
+DLLIMPORT extern char** environ;
 
 namespace {
 
@@ -76,8 +94,10 @@ enum class ConfigItem {
   read_only_direct,
   recache,
   run_second_cpp,
+  secondary_storage,
   sloppiness,
   stats,
+  stats_log,
   temporary_dir,
   umask,
 };
@@ -117,8 +137,10 @@ const std::unordered_map<std::string, ConfigItem> k_config_key_table = {
   {"read_only_direct", ConfigItem::read_only_direct},
   {"recache", ConfigItem::recache},
   {"run_second_cpp", ConfigItem::run_second_cpp},
+  {"secondary_storage", ConfigItem::secondary_storage},
   {"sloppiness", ConfigItem::sloppiness},
   {"stats", ConfigItem::stats},
+  {"stats_log", ConfigItem::stats_log},
   {"temporary_dir", ConfigItem::temporary_dir},
   {"umask", ConfigItem::umask},
 };
@@ -159,8 +181,10 @@ const std::unordered_map<std::string, std::string> k_env_variable_table = {
   {"READONLY", "read_only"},
   {"READONLY_DIRECT", "read_only_direct"},
   {"RECACHE", "recache"},
+  {"SECONDARY_STORAGE", "secondary_storage"},
   {"SLOPPINESS", "sloppiness"},
   {"STATS", "stats"},
+  {"STATSLOG", "stats_log"},
   {"TEMPDIR", "temporary_dir"},
   {"UMASK", "umask"},
 };
@@ -254,7 +278,7 @@ parse_sloppiness(const std::string& value)
   while (end != std::string::npos) {
     end = value.find_first_of(", ", start);
     std::string token =
-      Util::strip_whitespace(value.substr(start, end - start));
+      util::strip_whitespace(value.substr(start, end - start));
     if (token == "file_stat_matches") {
       result |= SLOPPY_FILE_STAT_MATCHES;
     } else if (token == "file_stat_matches_ctime") {
@@ -275,6 +299,8 @@ parse_sloppiness(const std::string& value)
       result |= SLOPPY_LOCALE;
     } else if (token == "modules") {
       result |= SLOPPY_MODULES;
+    } else if (token == "ivfsoverlay") {
+      result |= SLOPPY_IVFSOVERLAY;
     } // else: ignore unknown value for forward compatibility
     start = value.find_first_not_of(", ", end);
   }
@@ -315,6 +341,9 @@ format_sloppiness(uint32_t sloppiness)
   if (sloppiness & SLOPPY_MODULES) {
     result += "modules, ";
   }
+  if (sloppiness & SLOPPY_IVFSOVERLAY) {
+    result += "ivfsoverlay, ";
+  }
   if (!result.empty()) {
     // Strip last ", ".
     result.resize(result.size() - 2);
@@ -322,35 +351,20 @@ format_sloppiness(uint32_t sloppiness)
   return result;
 }
 
-uint32_t
-parse_umask(const std::string& value)
-{
-  if (value.empty()) {
-    return std::numeric_limits<uint32_t>::max();
-  }
-
-  size_t end;
-  uint32_t result = std::stoul(value, &end, 8);
-  if (end != value.size()) {
-    throw Error("not an octal integer: \"{}\"", value);
-  }
-  return result;
-}
-
 std::string
-format_umask(uint32_t umask)
+format_umask(nonstd::optional<mode_t> umask)
 {
-  if (umask == std::numeric_limits<uint32_t>::max()) {
-    return {};
+  if (umask) {
+    return FMT("{:03o}", *umask);
   } else {
-    return FMT("{:03o}", umask);
+    return {};
   }
 }
 
 void
 verify_absolute_path(const std::string& value)
 {
-  if (!Util::is_absolute_path(value)) {
+  if (!util::is_absolute_path(value)) {
     throw Error("not an absolute path: \"{}\"", value);
   }
 }
@@ -361,7 +375,7 @@ parse_line(const std::string& line,
            std::string* value,
            std::string* error_message)
 {
-  std::string stripped_line = Util::strip_whitespace(line);
+  std::string stripped_line = util::strip_whitespace(line);
   if (stripped_line.empty() || stripped_line[0] == '#') {
     return true;
   }
@@ -372,8 +386,8 @@ parse_line(const std::string& line,
   }
   *key = stripped_line.substr(0, equal_pos);
   *value = stripped_line.substr(equal_pos + 1);
-  *key = Util::strip_whitespace(*key);
-  *value = Util::strip_whitespace(*value);
+  *key = util::strip_whitespace(*key);
+  *value = util::strip_whitespace(*value);
   return true;
 }
 
@@ -415,6 +429,30 @@ parse_config_file(const std::string& path,
 
 } // namespace
 
+static std::string
+default_cache_dir(const std::string& home_dir)
+{
+#ifdef _WIN32
+  return home_dir + "/ccache";
+#elif defined(__APPLE__)
+  return home_dir + "/Library/Caches/ccache";
+#else
+  return home_dir + "/.cache/ccache";
+#endif
+}
+
+static std::string
+default_config_dir(const std::string& home_dir)
+{
+#ifdef _WIN32
+  return home_dir + "/ccache";
+#elif defined(__APPLE__)
+  return home_dir + "/Library/Preferences/ccache";
+#else
+  return home_dir + "/.config/ccache";
+#endif
+}
+
 std::string
 compiler_type_to_string(CompilerType compiler_type)
 {
@@ -435,6 +473,77 @@ compiler_type_to_string(CompilerType compiler_type)
 #undef CASE
 
   ASSERT(false);
+}
+
+void
+Config::read()
+{
+  const std::string home_dir = Util::get_home_directory();
+  const std::string legacy_ccache_dir = home_dir + "/.ccache";
+  const bool legacy_ccache_dir_exists =
+    Stat::stat(legacy_ccache_dir).is_directory();
+  const char* const env_xdg_cache_home = getenv("XDG_CACHE_HOME");
+  const char* const env_xdg_config_home = getenv("XDG_CONFIG_HOME");
+
+  const char* env_ccache_configpath = getenv("CCACHE_CONFIGPATH");
+  if (env_ccache_configpath) {
+    set_primary_config_path(env_ccache_configpath);
+  } else {
+    // Only used for ccache tests:
+    const char* const env_ccache_configpath2 = getenv("CCACHE_CONFIGPATH2");
+
+    set_secondary_config_path(env_ccache_configpath2
+                                ? env_ccache_configpath2
+                                : FMT("{}/ccache.conf", SYSCONFDIR));
+    MTR_BEGIN("config", "conf_read_secondary");
+    // A missing config file in SYSCONFDIR is OK so don't check return value.
+    update_from_file(secondary_config_path());
+    MTR_END("config", "conf_read_secondary");
+
+    const char* const env_ccache_dir = getenv("CCACHE_DIR");
+    std::string primary_config_dir;
+    if (env_ccache_dir && *env_ccache_dir) {
+      primary_config_dir = env_ccache_dir;
+    } else if (!cache_dir().empty() && !env_ccache_dir) {
+      primary_config_dir = cache_dir();
+    } else if (legacy_ccache_dir_exists) {
+      primary_config_dir = legacy_ccache_dir;
+    } else if (env_xdg_config_home) {
+      primary_config_dir = FMT("{}/ccache", env_xdg_config_home);
+    } else {
+      primary_config_dir = default_config_dir(home_dir);
+    }
+    set_primary_config_path(primary_config_dir + "/ccache.conf");
+  }
+
+  const std::string& cache_dir_before_primary_config = cache_dir();
+
+  MTR_BEGIN("config", "conf_read_primary");
+  update_from_file(primary_config_path());
+  MTR_END("config", "conf_read_primary");
+
+  // Ignore cache_dir set in primary
+  set_cache_dir(cache_dir_before_primary_config);
+
+  MTR_BEGIN("config", "conf_update_from_environment");
+  update_from_environment();
+  // (cache_dir is set above if CCACHE_DIR is set.)
+  MTR_END("config", "conf_update_from_environment");
+
+  if (cache_dir().empty()) {
+    if (legacy_ccache_dir_exists) {
+      set_cache_dir(legacy_ccache_dir);
+    } else if (env_xdg_cache_home) {
+      set_cache_dir(FMT("{}/ccache", env_xdg_cache_home));
+    } else {
+      set_cache_dir(default_cache_dir(home_dir));
+    }
+  }
+  // else: cache_dir was set explicitly via environment or via secondary
+  // config.
+
+  // We have now determined config.cache_dir and populated the rest of config
+  // in prio order (1. environment, 2. primary config, 3. secondary config).
 }
 
 const std::string&
@@ -464,14 +573,12 @@ Config::set_secondary_config_path(std::string path)
 bool
 Config::update_from_file(const std::string& path)
 {
-  return parse_config_file(path,
-                           [&](const std::string& /*line*/,
-                               const std::string& key,
-                               const std::string& value) {
-                             if (!key.empty()) {
-                               set_item(key, value, nullopt, false, path);
-                             }
-                           });
+  return parse_config_file(
+    path, [&](const auto& /*line*/, const auto& key, const auto& value) {
+      if (!key.empty()) {
+        this->set_item(key, value, nullopt, false, path);
+      }
+    });
 }
 
 void
@@ -480,7 +587,7 @@ Config::update_from_environment()
   for (char** env = environ; *env; ++env) {
     std::string setting = *env;
     const std::string prefix = "CCACHE_";
-    if (!Util::starts_with(setting, prefix)) {
+    if (!util::starts_with(setting, prefix)) {
       continue;
     }
     size_t equal_pos = setting.find('=');
@@ -490,7 +597,7 @@ Config::update_from_environment()
 
     std::string key = setting.substr(prefix.size(), equal_pos - prefix.size());
     std::string value = setting.substr(equal_pos + 1);
-    bool negate = Util::starts_with(key, "NO");
+    bool negate = util::starts_with(key, "NO");
     if (negate) {
       key = key.substr(2);
     }
@@ -621,11 +728,17 @@ Config::get_string_value(const std::string& key) const
   case ConfigItem::run_second_cpp:
     return format_bool(m_run_second_cpp);
 
+  case ConfigItem::secondary_storage:
+    return m_secondary_storage;
+
   case ConfigItem::sloppiness:
     return format_sloppiness(m_sloppiness);
 
   case ConfigItem::stats:
     return format_bool(m_stats);
+
+  case ConfigItem::stats_log:
+    return m_stats_log;
 
   case ConfigItem::temporary_dir:
     return m_temporary_dir;
@@ -664,17 +777,16 @@ Config::set_value_in_file(const std::string& path,
   AtomicFile output(resolved_path, AtomicFile::Mode::text);
   bool found = false;
 
-  if (!parse_config_file(path,
-                         [&](const std::string& c_line,
-                             const std::string& c_key,
-                             const std::string& /*c_value*/) {
-                           if (c_key == key) {
-                             output.write(FMT("{} = {}\n", key, value));
-                             found = true;
-                           } else {
-                             output.write(FMT("{}\n", c_line));
-                           }
-                         })) {
+  if (!parse_config_file(
+        path,
+        [&](const auto& c_line, const auto& c_key, const auto& /*c_value*/) {
+          if (c_key == key) {
+            output.write(FMT("{} = {}\n", key, value));
+            found = true;
+          } else {
+            output.write(FMT("{}\n", c_line));
+          }
+        })) {
     throw Error("failed to open {}: {}", path, strerror(errno));
   }
 
@@ -748,11 +860,10 @@ Config::set_item(const std::string& key,
     m_compression = parse_bool(value, env_var_key, negate);
     break;
 
-  case ConfigItem::compression_level: {
-    m_compression_level =
-      Util::parse_signed(value, INT8_MIN, INT8_MAX, "compression_level");
+  case ConfigItem::compression_level:
+    m_compression_level = util::value_or_throw<Error>(
+      util::parse_signed(value, INT8_MIN, INT8_MAX, "compression_level"));
     break;
-  }
 
   case ConfigItem::cpp_extension:
     m_cpp_extension = value;
@@ -819,7 +930,8 @@ Config::set_item(const std::string& key,
     break;
 
   case ConfigItem::max_files:
-    m_max_files = Util::parse_unsigned(value, nullopt, nullopt, "max_files");
+    m_max_files = util::value_or_throw<Error>(
+      util::parse_unsigned(value, nullopt, nullopt, "max_files"));
     break;
 
   case ConfigItem::max_size:
@@ -858,6 +970,10 @@ Config::set_item(const std::string& key,
     m_run_second_cpp = parse_bool(value, env_var_key, negate);
     break;
 
+  case ConfigItem::secondary_storage:
+    m_secondary_storage = Util::expand_environment_variables(value);
+    break;
+
   case ConfigItem::sloppiness:
     m_sloppiness = parse_sloppiness(value);
     break;
@@ -866,13 +982,23 @@ Config::set_item(const std::string& key,
     m_stats = parse_bool(value, env_var_key, negate);
     break;
 
+  case ConfigItem::stats_log:
+    m_stats_log = Util::expand_environment_variables(value);
+    break;
+
   case ConfigItem::temporary_dir:
     m_temporary_dir = Util::expand_environment_variables(value);
     m_temporary_dir_configured_explicitly = true;
     break;
 
   case ConfigItem::umask:
-    m_umask = parse_umask(value);
+    if (!value.empty()) {
+      const auto umask = util::parse_umask(value);
+      if (!umask) {
+        throw Error(umask.error());
+      }
+      m_umask = *umask;
+    }
     break;
   }
 

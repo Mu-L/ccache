@@ -356,6 +356,7 @@ reset_environment() {
     unset TERM
     unset XDG_CACHE_HOME
     unset XDG_CONFIG_HOME
+    export PWD=$(pwd)
 
     export CCACHE_DETECT_SHEBANG=1
     export CCACHE_DIR=$ABS_TESTDIR/.ccache
@@ -398,13 +399,24 @@ run_suite() {
     SUITE_$suite_name
     echo
 
+    terminate_all_children
+
     return 0
+}
+
+terminate_all_children() {
+    local pids="$(jobs -p)"
+    if [[ -n "$pids" ]]; then
+        kill $pids >/dev/null 2>&1
+        wait >/dev/null 2>&1
+    fi
 }
 
 TEST() {
     CURRENT_TEST=$1
     CCACHE_COMPILE="$CCACHE $COMPILER"
 
+    terminate_all_children
     reset_environment
 
     if $verbose; then
@@ -432,6 +444,8 @@ TEST() {
 
 export LC_ALL=C
 
+trap terminate_all_children EXIT # also clean up after exceptional code flow
+
 if pwd | grep '[^A-Za-z0-9/.,=_%+-]' >/dev/null 2>&1; then
     cat <<EOF
 Error: The test suite doesn't work in directories with whitespace or other
@@ -450,6 +464,8 @@ export PATH
 
 if [ -n "$CC" ]; then
     COMPILER="$CC"
+elif [[ "$OSTYPE" == "darwin"* && -x "$(command -v clang)" ]]; then
+    COMPILER=clang
 else
     COMPILER=gcc
 fi
@@ -463,13 +479,17 @@ COMPILER_TYPE_GCC=false
 COMPILER_USES_LLVM=false
 COMPILER_USES_MINGW=false
 
+ABS_ROOT_DIR="$(cd $(dirname "$0"); pwd)"
+readonly HTTP_CLIENT="${ABS_ROOT_DIR}/http-client"
+readonly HTTP_SERVER="${ABS_ROOT_DIR}/http-server"
+
 HOST_OS_APPLE=false
 HOST_OS_LINUX=false
 HOST_OS_FREEBSD=false
 HOST_OS_WINDOWS=false
 HOST_OS_CYGWIN=false
 
-compiler_version="`$COMPILER --version 2>&1 | head -1`"
+compiler_version="`$COMPILER --version 2>/dev/null | head -1`"
 case $compiler_version in
     *gcc*|*g++*|2.95*)
         COMPILER_TYPE_GCC=true
@@ -479,8 +499,8 @@ case $compiler_version in
         CLANG_VERSION_SUFFIX=$(echo "${COMPILER%% *}" | sed 's/.*clang//')
         ;;
     *)
-        echo "WARNING: Compiler $COMPILER not supported (version: $compiler_version) -- not running tests" >&2
-        exit 0
+        echo "WARNING: Compiler $COMPILER not supported (version: $compiler_version) -- Skipped running tests" >&2
+        exit $skip_code
         ;;
 esac
 
@@ -570,7 +590,7 @@ if [ "$REAL_COMPILER" = "$COMPILER" ]; then
 else
     echo "Compiler:         $COMPILER ($REAL_COMPILER)"
 fi
-echo "Compiler version: $($COMPILER --version | head -n 1)"
+echo "Compiler version: $($COMPILER --version 2>/dev/null | head -n 1)"
 
 REAL_NVCC=$(find_compiler nvcc)
 REAL_CUOBJDUMP=$(find_compiler cuobjdump)

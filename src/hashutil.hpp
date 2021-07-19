@@ -1,4 +1,4 @@
-// Copyright (C) 2009-2020 Joel Rosdahl and other contributors
+// Copyright (C) 2009-2021 Joel Rosdahl and other contributors
 //
 // See doc/AUTHORS.adoc for a complete list of contributors.
 //
@@ -18,10 +18,9 @@
 
 #pragma once
 
-#include "system.hpp"
-
 #include "third_party/nonstd/string_view.hpp"
 
+#include <cstddef>
 #include <string>
 
 class Config;

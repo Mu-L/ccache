@@ -1,4 +1,4 @@
-// Copyright (C) 2019 Joel Rosdahl and other contributors
+// Copyright (C) 2021 Joel Rosdahl and other contributors
 //
 // See doc/AUTHORS.adoc for a complete list of contributors.
 //
@@ -16,17 +16,16 @@
 // this program; if not, write to the Free Software Foundation, Inc., 51
 // Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
 
-#pragma once
+#include "Fd.hpp"
 
-namespace std {
+#include <core/wincompat.hpp>
 
-#if __cplusplus < 201402L
-template<typename T, typename... TArgs>
-inline unique_ptr<T>
-make_unique(TArgs&&... args)
-{
-  return unique_ptr<T>(new T(std::forward<TArgs>(args)...));
-}
+#ifdef HAVE_UNISTD_H
+#  include <unistd.h>
 #endif
 
-} // namespace std
+bool
+Fd::close()
+{
+  return m_fd != -1 && ::close(release()) == 0;
+}
