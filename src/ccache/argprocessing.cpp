@@ -1,4 +1,4 @@
-// Copyright (C) 2020-2024 Joel Rosdahl and other contributors
+// Copyright (C) 2020-2025 Joel Rosdahl and other contributors
 //
 // See doc/AUTHORS.adoc for a complete list of contributors.
 //
@@ -1120,6 +1120,11 @@ process_option_arg(const Context& ctx,
     return Statistic::none;
   }
 
+  if (util::starts_with(arg, "-fbuild-session-file")
+      && !(config.sloppiness().contains(core::Sloppy::time_macros))) {
+    args_info.build_session_file = arg.substr(arg.find('=') + 1);
+  }
+
   if (config.sloppiness().contains(core::Sloppy::clang_index_store)
       && arg == "-index-store-path") {
     // Xcode 9 or later calls Clang with this option. The given path includes a
@@ -1191,17 +1196,16 @@ process_option_arg(const Context& ctx,
   // Potentially rewrite concatenated absolute path argument to relative.
   if (arg[0] == '-') {
     const auto [option, path] = util::split_option_with_concat_path(arg);
-    if (path) {
-      if (compopt_takes_concat_arg(option) && compopt_takes_path(option)) {
-        const auto relpath = core::make_relative_path(ctx, *path);
-        std::string new_option = FMT("{}{}", option, relpath);
-        if (compopt_affects_cpp_output(option)) {
-          state.cpp_args.push_back(std::move(new_option));
-        } else {
-          state.common_args.push_back(std::move(new_option));
-        }
-        return Statistic::none;
+    if (path && compopt_takes_concat_arg(option)
+        && compopt_takes_path(option)) {
+      const auto relpath = core::make_relative_path(ctx, *path);
+      std::string new_option = FMT("{}{}", option, relpath);
+      if (compopt_affects_cpp_output(option)) {
+        state.cpp_args.push_back(std::move(new_option));
+      } else {
+        state.common_args.push_back(std::move(new_option));
       }
+      return Statistic::none;
     }
   }
 
