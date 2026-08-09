@@ -1889,6 +1889,15 @@ EOF
     expect_stat cache_miss 0
     expect_stat unsupported_code_directive 2
 
+    cat <<EOF >incbin.c
+__asm__(".incbin    \"empty.bin\"");
+EOF
+
+    $CCACHE_COMPILE -c incbin.c
+    expect_stat preprocessed_cache_hit 0
+    expect_stat cache_miss 0
+    expect_stat unsupported_code_directive 3
+
     # -------------------------------------------------------------------------
     TEST ".incbin in .h"
 

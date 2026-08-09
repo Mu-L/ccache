@@ -124,6 +124,17 @@ BM_check_for_source_code_patterns_scalar(benchmark::State& state)
   state.SetBytesProcessed(state.iterations() * source.size());
 }
 
+static void
+BM_find_incbin_directive(benchmark::State& state)
+{
+  const auto source = generate_source_code(state.range(0));
+  for (auto _ : state) {
+    auto result = find_incbin_directive(source);
+    benchmark::DoNotOptimize(result);
+  }
+  state.SetBytesProcessed(state.iterations() * source.size());
+}
+
 #ifdef HAVE_AVX2
 BENCHMARK(BM_check_for_source_code_patterns_avx2)
   ->Arg(1000)
@@ -133,6 +144,12 @@ BENCHMARK(BM_check_for_source_code_patterns_avx2)
 #endif
 
 BENCHMARK(BM_check_for_source_code_patterns_scalar)
+  ->Arg(1000)
+  ->Arg(10000)
+  ->Arg(100000)
+  ->Arg(1000000);
+
+BENCHMARK(BM_find_incbin_directive)
   ->Arg(1000)
   ->Arg(10000)
   ->Arg(100000)

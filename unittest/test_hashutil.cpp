@@ -336,6 +336,17 @@ TEST_CASE("check_for_source_code_patterns: temporal macros and directives")
   CHECK(result.contains(SourceCodeScan::found_timestamp));
 }
 
+TEST_CASE("find_incbin_directive")
+{
+  CHECK(find_incbin_directive(FMT(".inc{}bin    \"data.bin\"", "")) == 0);
+  CHECK(find_incbin_directive(FMT("x.inc{}bin\t\\\"data.bin\\\"", "")) == 1);
+  CHECK(find_incbin_directive(FMT(".inc{}bin(data)", ""))
+        == std::string_view::npos);
+  CHECK(find_incbin_directive(
+          FMT(".inc{}bin(data) .inc{}bin \"data.bin\"", "", ""), 1)
+        == 14);
+}
+
 TEST_CASE("check_for_source_code_patterns: macro-expanded embed operand")
 {
   TestContext test_context;

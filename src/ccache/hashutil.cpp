@@ -530,3 +530,15 @@ hash_multicommand_output(Hash& hash,
   }
   return true;
 }
+
+size_t
+find_incbin_directive(std::string_view str, size_t start)
+{
+  for (size_t pos = str.find('.', start); pos != std::string_view::npos;
+       pos = str.find('.', pos + 1)) {
+    if (check_for_incbin_directive(str, pos) == SourceCodeScan::found_incbin) {
+      return pos;
+    }
+  }
+  return std::string_view::npos;
+}

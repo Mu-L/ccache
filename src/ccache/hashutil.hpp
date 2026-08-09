@@ -54,6 +54,10 @@ SourceCodeScanResult check_for_source_code_patterns_avx2(std::string_view str);
 SourceCodeScanResult
 check_for_source_code_patterns_scalar(std::string_view str);
 
+// Return the position of the next incbin directive in `str` or
+// `std::string_view::npos` if not found.
+size_t find_incbin_directive(std::string_view str, size_t start = 0);
+
 // Hash a source code file using the inode cache if enabled.
 std::optional<Hash::Digest> hash_source_code_file(
   Context& ctx, const std::filesystem::path& path, size_t size_hint = 0);

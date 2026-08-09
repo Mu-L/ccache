@@ -521,6 +521,27 @@ starts_with(const char* str, std::string_view prefix)
   return strncmp(str, prefix.data(), prefix.length()) == 0;
 }
 
+static bool
+is_on_preprocessor_directive_line(std::string_view data, size_t pos)
+{
+  const auto newline_pos = data.rfind('\n', pos);
+  const size_t line_start =
+    newline_pos == std::string_view::npos ? 0 : newline_pos + 1;
+  return data[line_start] == '#';
+}
+
+static bool
+contains_incbin_directive(std::string_view data)
+{
+  for (size_t pos = find_incbin_directive(data); pos != std::string_view::npos;
+       pos = find_incbin_directive(data, pos + 1)) {
+    if (!is_on_preprocessor_directive_line(data, pos)) {
+      return true;
+    }
+  }
+  return false;
+}
+
 static tl::expected<void, Failure>
 do_process_preprocessed_data(Context& ctx, Hash& hash, util::Bytes&& data)
 {
@@ -543,10 +564,6 @@ do_process_preprocessed_data(Context& ctx, Hash& hash, util::Bytes&& data)
       "# 31 \"<command-line>\"\n";
     static const std::string_view hash_32_command_line_2_newline =
       "# 32 \"<command-line>\" 2\n";
-    // Note: Intentionally not using the string form to avoid false positive
-    // match by ccache itself.
-    static const char incbin_directive[] = {'.', 'i', 'n', 'c', 'b', 'i', 'n'};
-
     // Check if we look at a line containing the file name of an included file.
     // At least the following formats exist (where N is a positive integer):
     //
@@ -663,26 +680,6 @@ do_process_preprocessed_data(Context& ctx, Hash& hash, util::Bytes&& data)
 
       TRY(remember_include_file(ctx, inc_path, hash, system, nullptr));
       p = q; // Everything of interest between p and q has been hashed now.
-    } else if (strncmp(q, incbin_directive, sizeof(incbin_directive)) == 0
-               && ((q[7] == ' '
-                    && (q[8] == '"' || (q[8] == '\\' && q[9] == '"')))
-                   || q[7] == '"')) {
-      if (ctx.config.sloppiness().contains(core::Sloppy::incbin)) {
-        LOG(
-          "Found potential unsupported .inc"
-          "bin directive in source code but continuing due to enabled sloppy"
-          " incbin handling");
-        q += sizeof(incbin_directive);
-        continue;
-      }
-      // An assembler .inc bin (without the space) statement, which could be
-      // part of inline assembly, refers to an external file. If the file
-      // changes, the hash should change as well, but finding out what file to
-      // hash is too hard for ccache, so just bail out.
-      LOG(
-        "Found potential unsupported .inc"
-        "bin directive in source code");
-      return tl::unexpected(Failure(Statistic::unsupported_code_directive));
     } else if (strncmp(q, "___________", 10) == 0
                && (q == begin || q[-1] == '\n')) {
       // Unfortunately the distcc-pump wrapper outputs standard output lines:
@@ -701,6 +698,25 @@ do_process_preprocessed_data(Context& ctx, Hash& hash, util::Bytes&& data)
     } else {
       q++;
     }
+  }
+
+  // In direct mode we have searched for incbin directives via
+  // hash_source_code_file, so we only need to search here if direct mode is
+  // disabled.
+  if (!ctx.config.direct_mode()
+      && contains_incbin_directive(util::to_string_view(data))) {
+    if (!ctx.config.sloppiness().contains(core::Sloppy::incbin)) {
+      // An assembler .inc bin (without the space) statement, which could be
+      // part of inline assembly, refers to an external file. If the file
+      // changes, the hash should change as well, but finding out what file to
+      // hash is too hard for ccache, so just bail out.
+      LOG("Found potential unsupported .inc{}bin directive in source code", "");
+      return tl::unexpected(Failure(Statistic::unsupported_code_directive));
+    }
+    LOG(
+      "Found potential unsupported .inc{}bin directive in source code but"
+      " continuing due to enabled sloppy incbin handling",
+      "");
   }
 
   hash.hash(p, (end - p));
