@@ -1865,8 +1865,9 @@ EOF
     expect_stat preprocessed_cache_hit 1
     expect_stat cache_miss 1
 fi
+
     # -------------------------------------------------------------------------
-    TEST ".incbin"
+    TEST ".incbin in .c"
 
     touch empty.bin
 
@@ -1888,6 +1889,27 @@ EOF
     expect_stat cache_miss 0
     expect_stat unsupported_code_directive 2
 
+    # -------------------------------------------------------------------------
+    TEST ".incbin in .h"
+
+    touch empty.bin
+
+    cat <<EOF >incbin.h
+__asm__(".incbin \"empty.bin\"");
+EOF
+
+    cat <<EOF >incbin.c
+#include "incbin.h"
+EOF
+
+    $CCACHE_COMPILE -c incbin.c
+    expect_stat preprocessed_cache_hit 0
+    expect_stat cache_miss 0
+    expect_stat unsupported_code_directive 1
+
+    # -------------------------------------------------------------------------
+    TEST ".incbin in .s"
+
     cat <<EOF >incbin.s
 .incbin "empty.bin";
 EOF
@@ -1895,7 +1917,10 @@ EOF
     $CCACHE_COMPILE -c incbin.s
     expect_stat preprocessed_cache_hit 0
     expect_stat cache_miss 0
-    expect_stat unsupported_code_directive 3
+    expect_stat unsupported_code_directive 1
+
+    # -------------------------------------------------------------------------
+    TEST "incbin method in .cpp"
 
     cat <<EOF >incbin.cpp
       struct A {
@@ -1910,8 +1935,54 @@ EOF
     if $CCACHE_COMPILE -x c++ -c incbin.cpp 2>/dev/null; then
         expect_stat preprocessed_cache_hit 0
         expect_stat cache_miss 1
-        expect_stat unsupported_code_directive 3
+        expect_stat unsupported_code_directive 0
     fi
+
+    # -------------------------------------------------------------------------
+    TEST ".incbin in source file name"
+
+    echo "int x;" >source.incbin
+
+    $CCACHE_COMPILE -x c -c source.incbin
+    expect_stat preprocessed_cache_hit 0
+    expect_stat cache_miss 1
+    expect_stat unsupported_code_directive 0
+
+    # -------------------------------------------------------------------------
+    TEST ".incbin in .c, direct mode"
+
+    unset CCACHE_NODIRECT
+
+    touch empty.bin
+
+    cat <<EOF >incbin.c
+__asm__(".incbin \"empty.bin\"");
+EOF
+
+    $CCACHE_COMPILE -c incbin.c
+    expect_stat preprocessed_cache_hit 0
+    expect_stat cache_miss 0
+    expect_stat unsupported_code_directive 1
+
+    # -------------------------------------------------------------------------
+    TEST ".incbin in .h, direct mode"
+
+    unset CCACHE_NODIRECT
+
+    touch empty.bin
+
+    cat <<EOF >incbin.h
+__asm__(".incbin \"empty.bin\"");
+EOF
+
+    cat <<EOF >incbin.c
+#include "incbin.h"
+EOF
+
+    $CCACHE_COMPILE -c incbin.c
+    expect_stat preprocessed_cache_hit 0
+    expect_stat cache_miss 0
+    expect_stat unsupported_code_directive 1
 
     # -------------------------------------------------------------------------
 if ! $HOST_OS_WINDOWS; then
