@@ -2,7 +2,7 @@
 
 == Ccache 4.14
 
-Release date: 2026-08-09
+Release date: TODO
 
 
 === Deprecation notice
@@ -11,6 +11,14 @@ Built-in support for the HTTP and Redis protocols will be removed in the next
 non-bug-fix ccache version. Use the
 https://ccache.dev/storage-helpers.html[remote storage helper] mechanism (added
 in ccache 4.13) for HTTP/Redis storage instead.
+
+
+=== Removed functionality
+
+- Removed the `cpp_extension` (`CCACHE_EXTENSION`) configuration option since
+  ccache now processes preprocessor output directly in memory instead of using
+  intermediate files.. +
+  [small]#_[contributed by Joel Rosdahl]_#
 
 
 === New features and improvements
@@ -50,6 +58,12 @@ in ccache 4.13) for HTTP/Redis storage instead.
   [small]#_[contributed by Joel Rosdahl]_#
 
 - Increased the maximum number of raw files stored in a cached result to 256. +
+  [small]#_[contributed by Joel Rosdahl]_#
+
+- Modernized use of C++ type traits. +
+  [small]#_[contributed by Gregor Jasny]_#
+
+- Improved portability of compiler exit status handling. +
   [small]#_[contributed by Joel Rosdahl]_#
 
 
@@ -101,6 +115,19 @@ in ccache 4.13) for HTTP/Redis storage instead.
 
 - Fixed handling of systems that report zero available hardware threads. +
   [small]#_[contributed by Joel Rosdahl]_#
+
+- Fixed reporting of errors from `posix_spawnp`. +
+  [small]#_[contributed by Joel Rosdahl]_#
+
+- Fixed the statistics counter used when a Clang sanitize ignorelist cannot be
+  read. +
+  [small]#_[contributed by Joel Rosdahl]_#
+
+
+=== Build improvements
+
+- Fixed building with Clang 23. +
+  [small]#_[contributed by GitHub user LinuxUserGD]_#
 
 
 == Ccache 4.13.6
