@@ -1,5 +1,108 @@
 = Ccache news
 
+== Ccache 4.14
+
+Release date: 2026-08-09
+
+
+=== Deprecation notice
+
+Built-in support for the HTTP and Redis protocols will be removed in the next
+non-bug-fix ccache version. Use the
+https://ccache.dev/storage-helpers.html[remote storage helper] mechanism (added
+in ccache 4.13) for HTTP/Redis storage instead.
+
+
+=== New features and improvements
+
+- Added support for the QCC (QNX) compiler. +
+  [small]#_[contributed by Joy Wang]_#
+
+- Added automatic depend mode for NVCC on Windows. +
+  [small]#_[contributed by Xing Xiwen]_#
+
+- Extended the remote storage helper protocol with an `exists` operation,
+  avoiding transfer of already stored values in reshare mode, and an `info`
+  operation for reporting the helper's identity and diagnostics. +
+  [small]#_[contributed by Joel Rosdahl]_#
+
+- Added a `--dry-run` option for previewing cleanup, eviction and directory
+  trimming operations without removing files. +
+  [small]#_[contributed by Joel Rosdahl]_#
+
+- Added support for rewriting paths to profile data files relative to
+  `base_dir`, improving cache sharing between different directory trees. +
+  [small]#_[contributed by GitHub user markyang92]_#
+
+- Added support for reflinking `.dwo` files when file cloning is enabled. +
+  [small]#_[contributed by Fabian Parzefall]_#
+
+- Added detection of C23 `\#embed` directives in direct and depend mode and of
+  assembler `.incbin` directives in depend mode, preventing false cache hits. +
+  [small]#_[contributed by Joel Rosdahl and Haaris Rahman]_#
+
+- Ccache now hashes the contents of Clang module files specified with
+  `-fmodule-file=`, preventing false cache hits when a module changes. +
+  [small]#_[contributed by GitHub user RedNicStone]_#
+
+- Cleanup and eviction operations now print the amount of data and number of
+  files removed. +
+  [small]#_[contributed by Joel Rosdahl]_#
+
+- Increased the maximum number of raw files stored in a cached result to 256. +
+  [small]#_[contributed by Joel Rosdahl]_#
+
+
+=== Bug fixes
+
+- Fixed handling of compiler options when one recognized option is a prefix of
+  another.
+  [small]#_[contributed by Joel Rosdahl]_#
+
+- Fixed path case handling on Windows, including Unicode-aware path comparison
+  and matching of `ignore_headers_in_manifest` on case-insensitive file
+  systems. +
+  [small]#_[contributed by GitHub user trustytrojan and Joel Rosdahl]_#
+
+- Fixed `base_dir` handling for include paths in preprocessor mode. +
+  [small]#_[contributed by Joel Rosdahl]_#
+
+- Fixed handling of Clang 22's `--warning-suppression-mappings` option. +
+  [small]#_[contributed by Joel Rosdahl]_#
+
+- Fixed error handling when a Clang configuration file cannot be hashed. +
+  [small]#_[contributed by Joel Rosdahl]_#
+
+- Fixed a remote storage configuration with `read_only=false` being treated as
+  read-only. +
+  [small]#_[contributed by GitHub user ThisIsFineTM]_#
+
+- Fixed interrupted system calls when communicating with remote storage
+  helpers. +
+  [small]#_[contributed by Joel Rosdahl]_#
+
+- Avoided spawning and waiting for a remote storage helper when IPC access is
+  denied by a sandbox. +
+  [small]#_[contributed by Joel Rosdahl]_#
+
+- Fixed the free space check for the inode cache. +
+  [small]#_[contributed by Joel Rosdahl]_#
+
+- Fixed handling of empty atomic file writes and improved robustness if
+  opening an atomic file stream fails. +
+  [small]#_[contributed by Joel Rosdahl]_#
+
+- Fixed a size overflow when allocating very large files on Windows. +
+  [small]#_[contributed by Joel Rosdahl]_#
+
+- Fixed thread safety of time conversion fallbacks on systems without
+  `gmtime_r` and `localtime_r`. +
+  [small]#_[contributed by Joel Rosdahl]_#
+
+- Fixed handling of systems that report zero available hardware threads. +
+  [small]#_[contributed by Joel Rosdahl]_#
+
+
 == Ccache 4.13.6
 
 Release date: 2026-05-04
@@ -260,8 +363,6 @@ Release date: 2026-03-05
 
 - Added support for caching distributed ThinLTO for Clang. +
   [small]#_[contributed by GitHub user zcfh]_#
-
-- Added support for QCC (QNX) compiler.
 
 - Added support for caching MSVC `/sourceDependencies` file. +
   [small]#_[contributed by Joel Rosdahl]_#
