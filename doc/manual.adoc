@@ -1278,7 +1278,8 @@ compilation results and manifests.
 ccache can spawn a long-lived local storage helper process (installed
 separately) to handle communication with the remote storage. Storage helpers
 keep remote connections up for efficiency and terminate after a while on
-inactivity.
+inactivity. See https://ccache.dev/storage-helpers.html[Storage helpers] for a
+list of known helpers.
 
 The storage helper program is called `ccache-storage-<scheme>`, where `<scheme>`
 is the scheme part of a URL, e.g. `https`. The program can be placed in these
@@ -1434,8 +1435,9 @@ Examples:
 
 === HTTP storage backend
 
-WARNING: Built-in support for the HTTP protocol will likely be removed in a
-future ccache release.
+WARNING: Built-in support for the HTTP protocol is deprecated and will be
+removed in the next non-bug-fix ccache version. Use a <<Storage helper
+process,remote storage helper>> instead.
 
 URL format: `+http://HOST[:PORT][/PATH]+`
 
@@ -1485,8 +1487,9 @@ The default is *subdirs*.
 
 === Redis storage backend
 
-WARNING: Built-in support for the Redis protocol will likely be removed in a
-future ccache release.
+WARNING: Built-in support for the Redis protocol is deprecated and will be
+removed in the next non-bug-fix ccache version. Use a <<Storage helper
+process,remote storage helper>> instead.
 
 URL formats:
 
