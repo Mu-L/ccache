@@ -17,7 +17,7 @@ in ccache 4.13) for HTTP/Redis storage instead.
 
 - Removed the `cpp_extension` (`CCACHE_EXTENSION`) configuration option since
   ccache now processes preprocessor output directly in memory instead of using
-  intermediate files.. +
+  intermediate files. +
   [small]#_[contributed by Joel Rosdahl]_#
 
 
@@ -38,8 +38,8 @@ in ccache 4.13) for HTTP/Redis storage instead.
   trimming operations without removing files. +
   [small]#_[contributed by Joel Rosdahl]_#
 
-- Added support for rewriting paths to profile data files relative to
-  `base_dir`, improving cache sharing between different directory trees. +
+- Added support for rewriting absolute profile data file paths to relative,
+  improving cache sharing between different directory trees. +
   [small]#_[contributed by GitHub user markyang92]_#
 
 - Added support for reflinking `.dwo` files when file cloning is enabled. +
@@ -66,6 +66,15 @@ in ccache 4.13) for HTTP/Redis storage instead.
 - Improved portability of compiler exit status handling. +
   [small]#_[contributed by Joel Rosdahl]_#
 
+- Made path rewriting on Windows case-insensitive and Unicode-aware. +
+  [small]#_[contributed by Joel Rosdahl]_#
+
+- Made `ignore_headers_in_manifest` match case-insensitively on Windows. +
+  [small]#_[contributed by GitHub user trustytrojan]_#
+
+- Reduced the number of system calls for IPC requests. +
+  [small]#_[contributed by Joel Rosdahl]_#
+
 
 === Bug fixes
 
@@ -73,12 +82,8 @@ in ccache 4.13) for HTTP/Redis storage instead.
   another.
   [small]#_[contributed by Joel Rosdahl]_#
 
-- Fixed path case handling on Windows, including Unicode-aware path comparison
-  and matching of `ignore_headers_in_manifest` on case-insensitive file
-  systems. +
-  [small]#_[contributed by GitHub user trustytrojan and Joel Rosdahl]_#
-
-- Fixed `base_dir` handling for include paths in preprocessor mode. +
+- Fixed `base_dir` handling for include paths in preprocessor mode (regression
+  in ccache 4.12.2). +
   [small]#_[contributed by Joel Rosdahl]_#
 
 - Fixed handling of Clang 22's `--warning-suppression-mappings` option. +
@@ -128,6 +133,18 @@ in ccache 4.13) for HTTP/Redis storage instead.
 
 - Fixed building with Clang 23. +
   [small]#_[contributed by GitHub user LinuxUserGD]_#
+
+- Added missing CMake probe for `gmtime_r`. +
+  [small]#_[contributed by Joel Rosdahl]_#
+
+
+=== Documentation improvements
+
+- Improved `base_dir` documentation. +
+  [small]#_[contributed by Joel Rosdahl]_#
+
+- Clarified syntax of configuration options that take path lists. +
+  [small]#_[contributed by Joel Rosdahl]_#
 
 
 == Ccache 4.13.6
