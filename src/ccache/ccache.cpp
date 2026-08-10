@@ -1716,7 +1716,7 @@ hash_common_info(const Context& ctx, const util::Args& args, Hash& hash)
   // Hash variables that may affect the compilation.
   const char* always_hash_env_vars[] = {
     // From <https://gcc.gnu.org/onlinedocs/gcc/Environment-Variables.html>
-    // (note: SOURCE_DATE_EPOCH is handled in hash_source_code_string()):
+    // (note: SOURCE_DATE_EPOCH is handled in hash_source_code_file()):
     "COMPILER_PATH",
     "GCC_COMPARE_DEBUG",
     "GCC_EXEC_PREFIX",
