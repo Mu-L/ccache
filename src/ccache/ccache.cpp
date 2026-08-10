@@ -704,6 +704,8 @@ do_process_preprocessed_data(Context& ctx, Hash& hash, util::Bytes&& data)
   // hash_source_code_file, so we only need to search here if direct mode is
   // disabled.
   if (!ctx.config.direct_mode()
+      // note: not using is_compiler_group_msvc() since clang-cl knows .incbin
+      && ctx.config.compiler_type() != CompilerType::msvc
       && contains_incbin_directive(util::to_string_view(data))) {
     if (!ctx.config.sloppiness().contains(core::Sloppy::incbin)) {
       // An assembler .inc bin (without the space) statement, which could be
