@@ -96,7 +96,12 @@ Client::connect(const std::string& path)
     return tl::unexpected(make_error(result.error()));
   }
 
-  TRY(read_greeting());
+  if (auto greeting_result = read_greeting(); !greeting_result) {
+    // Don't leave the channel connected, otherwise a later connect attempt
+    // would fail since the transport is still in use.
+    close();
+    return tl::unexpected(greeting_result.error());
+  }
 
   m_connected = true;
   return {};
@@ -262,12 +267,10 @@ Client::stop()
 void
 Client::close()
 {
-  if (m_connected) {
-    m_channel.close();
-    m_connected = false;
-    m_protocol_version = 0;
-    m_capabilities.clear();
-  }
+  m_channel.close();
+  m_connected = false;
+  m_protocol_version = 0;
+  m_capabilities.clear();
 }
 
 tl::expected<void, Client::Error>
