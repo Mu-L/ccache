@@ -100,6 +100,10 @@ in ccache 4.13) for HTTP/Redis storage instead.
   helpers. +
   [small]#_[contributed by Joel Rosdahl]_#
 
+- Avoided a race if starting a remote storage helper takes an unexpectedly long
+  time. +
+  [small]#_[contributed by Joel Rosdahl]_#
+
 - Avoided spawning and waiting for a remote storage helper when IPC access is
   denied by a sandbox. +
   [small]#_[contributed by Joel Rosdahl]_#
