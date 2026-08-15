@@ -29,6 +29,9 @@ in ccache 4.13) for HTTP/Redis storage instead.
 - Added automatic depend mode for NVCC on Windows. +
   [small]#_[contributed by Xing Xiwen]_#
 
+- Added configurable directory layout for the `file://` storage backend. +
+  [small]#_[contributed by Joel Rosdahl]_#
+
 - Extended the remote storage helper protocol with an `exists` operation,
   avoiding transfer of already stored values in reshare mode, and an `info`
   operation for reporting the helper's identity and diagnostics. +
@@ -48,6 +51,9 @@ in ccache 4.13) for HTTP/Redis storage instead.
 - Added detection of C23 `\#embed` directives in direct and depend mode and of
   assembler `.incbin` directives in depend mode, preventing false cache hits. +
   [small]#_[contributed by Joel Rosdahl and Haaris Rahman]_#
+
+- Added support for `-Wp,` options with multiple macro definitions. +
+  [small]#_[contributed by GitHub user subotac]_#
 
 - Ccache now hashes the contents of Clang module files specified with
   `-fmodule-file=`, preventing false cache hits when a module changes. +
