@@ -1403,14 +1403,16 @@ Examples:
 
 Optional attributes:
 
-* *@layout*: How to store file under the cache directory. Available values:
-+
---
-* *flat*: Store all files directly under the cache directory.
-* *subdirs*: Store files in 256 subdirectories of the cache directory.
---
-+
-The default is *subdirs*.
+* *@layout*: How to divide the key space into a directory structure. A layout
+  consists of one to four of the letters *a* to *d* in order, starting with *a*,
+  with an optional slash between adjacent letters. Each group of letters
+  specifies a directory name formed from the corresponding leading hexadecimal
+  characters of the key. The rest of the key becomes the file name. For example,
+  *ab* creates 256 directories, *a/b* creates 16 directories each containing up
+  to 16 subdirectories and *ab/c* creates 256 directories each containing up to
+  16 subdirectories. An empty value (*@layout=*) stores all files directly in
+  the cache directory. The default is *ab*. The values *flat* and *subdirs* are
+  aliases for an empty value and *ab*, respectively.
 * *@umask*: This attribute (an octal integer) overrides the umask to use for
   files and directories in the cache directory.
 * *@update-mtime*: If *true*, update the modification time (mtime) of cache

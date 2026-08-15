@@ -34,14 +34,47 @@
 #include <sys/stat.h> // for mode_t
 
 #include <string_view>
+#include <vector>
 
 namespace fs = util::filesystem;
+
+using namespace std::string_view_literals;
 
 using util::DirEntry;
 
 namespace storage::remote {
 
 namespace {
+
+std::vector<uint8_t>
+parse_layout(const std::string_view value)
+{
+  if (value.empty() || value == "flat") {
+    return {};
+  }
+
+  const auto pattern = value == "subdirs" ? "ab"sv : value;
+  std::vector<uint8_t> dir_lengths{0};
+  char expected = 'a';
+  for (const char ch : pattern) {
+    if (ch == '/') {
+      if (dir_lengths.back() == 0) {
+        throw core::Fatal(FMT("invalid file storage layout: \"{}\"", value));
+      }
+      dir_lengths.push_back(0);
+    } else if (ch != expected || expected > 'd') {
+      throw core::Fatal(FMT("invalid file storage layout: \"{}\"", value));
+    } else {
+      ++dir_lengths.back();
+      ++expected;
+    }
+  }
+
+  if (dir_lengths.back() == 0) {
+    throw core::Fatal(FMT("invalid file storage layout: \"{}\"", value));
+  }
+  return dir_lengths;
+}
 
 class FileStorageBackend : public RemoteStorage::Backend
 {
@@ -59,12 +92,10 @@ public:
   tl::expected<bool, Failure> remove(const Hash::Digest& key) override;
 
 private:
-  enum class Layout : uint8_t { flat, subdirs };
-
   std::string m_dir;
   std::optional<mode_t> m_umask;
   bool m_update_mtime = false;
-  Layout m_layout = Layout::subdirs;
+  std::vector<uint8_t> m_layout = {2};
 
   std::string get_entry_path(const Hash::Digest& key) const;
 };
@@ -96,13 +127,7 @@ FileStorageBackend::FileStorageBackend(
 
   for (const auto& attr : attributes) {
     if (attr.key == "layout") {
-      if (attr.value == "flat") {
-        m_layout = Layout::flat;
-      } else if (attr.value == "subdirs") {
-        m_layout = Layout::subdirs;
-      } else {
-        LOG("Unknown layout: {}", attr.value);
-      }
+      m_layout = parse_layout(attr.value);
     } else if (attr.key == "umask") {
       m_umask =
         util::value_or_throw<core::Fatal>(util::parse_umask(attr.value));
@@ -187,19 +212,16 @@ FileStorageBackend::remove(const Hash::Digest& key)
 std::string
 FileStorageBackend::get_entry_path(const Hash::Digest& key) const
 {
-  switch (m_layout) {
-  case Layout::flat:
-    return FMT("{}/{}", m_dir, util::format_base16(key));
-
-  case Layout::subdirs: {
-    const auto key_str = util::format_base16(key);
-    const uint8_t digits = 2;
-    ASSERT(key_str.length() > digits);
-    return FMT("{}/{:.{}}/{}", m_dir, key_str, digits, &key_str[digits]);
+  const auto key_str = util::format_base16(key);
+  fs::path path(m_dir);
+  size_t offset = 0;
+  for (const auto dir_length : m_layout) {
+    ASSERT(offset + dir_length < key_str.length());
+    path /= key_str.substr(offset, dir_length);
+    offset += dir_length;
   }
-  }
-
-  ASSERT(false);
+  path /= key_str.substr(offset);
+  return path.string();
 }
 
 } // namespace

@@ -131,6 +131,53 @@ SUITE_remote_file() {
     expect_file_count 3 '*' remote # CACHEDIR.TAG + result + manifest
 
     # -------------------------------------------------------------------------
+    TEST "Empty layout"
+
+    CCACHE_REMOTE_STORAGE+=" @layout="
+
+    $CCACHE_COMPILE -c test.c
+    expect_stat cache_miss 1
+    expect_file_count 3 '*' remote # CACHEDIR.TAG + result + manifest
+    subdirs=$(find remote -type d | wc -l)
+    if [ "${subdirs}" -ne 1 ]; then # "remote" itself counts as one
+        test_failed "Expected no subdirectories in remote"
+    fi
+
+    $CCACHE -C >/dev/null
+    $CCACHE_COMPILE -c test.c
+    expect_stat direct_cache_hit 1
+    expect_stat remote_storage_hit 1
+
+    # -------------------------------------------------------------------------
+    TEST "Pattern layout"
+
+    CCACHE_REMOTE_STORAGE+=" @layout=a/bc/d"
+
+    $CCACHE_COMPILE -c test.c
+    expect_stat cache_miss 1
+    expect_file_count 3 '*' remote # CACHEDIR.TAG + result + manifest
+    entries_at_expected_depth=$(
+        find remote -mindepth 4 -maxdepth 4 -type f | wc -l
+    )
+    if [ "${entries_at_expected_depth}" -ne 2 ]; then
+        test_failed "Expected cache entries in an a/bc/d layout"
+    fi
+
+    $CCACHE -C >/dev/null
+    $CCACHE_COMPILE -c test.c
+    expect_stat direct_cache_hit 1
+    expect_stat remote_storage_hit 1
+
+    # -------------------------------------------------------------------------
+    TEST "Invalid pattern layout"
+
+    for layout in a/c a//b abcde; do
+        CCACHE_REMOTE_STORAGE="file:$PWD/remote helper=_builtin_ @layout=$layout"
+        $CCACHE_COMPILE -c test.c 2>stderr.log
+        expect_contains stderr.log "invalid file storage layout: \"$layout\""
+    done
+
+    # -------------------------------------------------------------------------
     TEST "Two directories"
 
     CCACHE_REMOTE_STORAGE+=" file://$PWD/remote_2 helper=_builtin_"
