@@ -184,6 +184,17 @@ color_output_possible()
 }
 
 bool
+is_wp_macro_option_list(std::string_view options)
+{
+  const auto is_macro_option = [](const auto option) {
+    return option.starts_with("-D") || option.starts_with("-U");
+  };
+  return std::ranges::all_of(
+    util::Tokenizer(options, ",", util::Tokenizer::Mode::include_empty),
+    is_macro_option);
+}
+
+bool
 detect_pch(const std::string& option,
            const std::string& arg,
            ArgsInfo& args_info,
@@ -1128,8 +1139,7 @@ process_option_arg(const Context& ctx,
       }
       state.add_compiler_only_arg(args[i]);
       return Statistic::none;
-    } else if ((arg.starts_with("-Wp,-D") || arg.starts_with("-Wp,-U"))
-               && arg.find(',', 6) == std::string::npos) {
+    } else if (is_wp_macro_option_list(arg.substr(4))) {
       state.add_common_arg(args[i]);
       return Statistic::none;
     } else if (arg == "-Wp,-MP"
