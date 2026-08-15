@@ -37,6 +37,16 @@ namespace fs = util::filesystem;
 
 namespace {
 
+#ifdef _WIN32
+bool
+is_directory_separator(const std::wstring& string)
+{
+  return std::ranges::all_of(string, [](const auto character) {
+    return character == L'/' || character == L'\\';
+  });
+}
+#endif
+
 fs::path
 lexically_relative_case_aware(const fs::path& path, const fs::path& base)
 {
@@ -176,16 +186,6 @@ make_relative_path(const fs::path& dir1,
   // No match so nothing else to do than to return the unmodified path.
   return path;
 }
-
-#ifdef _WIN32
-static constexpr bool
-is_directory_separator(const std::wstring& s)
-{
-  // directory-separators can contain any number of slashes.
-  constexpr auto is_slash = [](auto c) { return c == '/' || c == '\\'; };
-  return std::ranges::all_of(s, is_slash);
-}
-#endif
 
 bool
 path_components_equal_case_aware(const fs::path& component1,
