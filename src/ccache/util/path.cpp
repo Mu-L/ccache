@@ -41,9 +41,10 @@ namespace {
 bool
 is_directory_separator(const std::wstring& string)
 {
-  return std::ranges::all_of(string, [](const auto character) {
-    return character == L'/' || character == L'\\';
-  });
+  return !string.empty()
+         && std::ranges::all_of(string, [](const auto character) {
+              return character == L'/' || character == L'\\';
+            });
 }
 #endif
 
