@@ -1467,9 +1467,13 @@ process_arg(const Context& ctx,
     return *statistic; // error found
   }
 
-  if (state.found_Yc && config.is_compiler_group_msvc()
+  if ((state.found_Yc || state.found_Yu) && config.is_compiler_group_msvc()
       && !config.base_dirs().empty()) {
-    LOG("Creating PCH with MSVC, disabling base directory");
+    if (state.found_Yc) {
+      LOG("Creating PCH with MSVC, disabling base directory");
+    } else {
+      LOG("Using PCH with MSVC, disabling base directory");
+    }
     config.set_base_dirs({});
     restart = true;
   }
